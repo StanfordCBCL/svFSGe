@@ -11,11 +11,11 @@ from collections import defaultdict
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 
-from generate_surfaces import convert_mesh
+# from https://github.com/StanfordCBCL/DataCuration
 sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
-
 from vtk_functions import read_geo, write_geo, get_points_cells, extract_surface, threshold
 
+# output folder
 f_out = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube'
 
 # cylinder size
@@ -169,58 +169,37 @@ for name in line_dict.keys():
     thresh.ThresholdBetween(1, 1)
     thresh.Update()
 
-    # export to file
+    # export surface mesh to file
     fout = os.path.join(f_out, 'mesh-surfaces', name + '.vtp')
     write_geo(fout, extract_surface(thresh.GetOutput()))
-#
-# # select points
-# id_list = vtk.vtkIdTypeArray()
-# id_list.SetNumberOfComponents(1)
-# for name, ids in line_dict.items():
-#     for i in ids:
-#         id_list.InsertNextValue(i)
-#
-# selectionNode = vtk.vtkSelectionNode()
-# selectionNode.SetFieldType(1)
-# selectionNode.SetContentType(4)
-# selectionNode.SetSelectionList(id_list)
-#
-# selection = vtk.vtkSelection()
-# selection.AddNode(selectionNode)
-#
-# extractSelection = vtk.vtkExtractSelection()
-# # extractSelection.SetInputConnection(0, vol)
-# extractSelection.SetInputData(1, selection)
-# extractSelection.Update()
-#
-# pdb.set_trace()
 
+# export volume mesh
 write_geo(os.path.join(f_out, 'mesh-complete.mesh.vtu'), vol)
 
 
 # generate quadratic mesh
+convert_quad = False
+if convert_quad:
+    # read quadratic mesh
+    f_quad = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube_quad/mesh-complete.mesh.vtu'
+    vol = read_geo(f_quad).GetOutput()
 
+    # calculate cell centers
+    centers = vtk.vtkCellCenters()
+    centers.SetInputData(vol)
+    centers.Update()
+    centers.VertexCellsOn()
+    centers.CopyArraysOn()
+    points = v2n(centers.GetOutput().GetPoints().GetData())
 
-# read quadratic mesh
-f_quad = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube_quad/mesh-complete.mesh.vtu'
-vol = read_geo(f_quad).GetOutput()
+    # radial vector
+    rad = points
+    rad[:, 2] = 0
+    rad = (rad.T / np.linalg.norm(rad, axis=1)).T
 
-# calculate cell centers
-centers = vtk.vtkCellCenters()
-centers.SetInputData(vol)
-centers.Update()
-centers.VertexCellsOn()
-centers.CopyArraysOn()
-points = v2n(centers.GetOutput().GetPoints().GetData())
+    arr = n2v(rad)
+    arr.SetName('FIB_DIR')
+    vol.GetCellData().AddArray(arr)
 
-# radial vector
-rad = points
-rad[:, 2] = 0
-rad = (rad.T / np.linalg.norm(rad, axis=1)).T
-
-arr = n2v(rad)
-arr.SetName('FIB_DIR')
-vol.GetCellData().AddArray(arr)
-
-write_geo(f_quad, vol)
-# write_geo('test.vtu', vol)
+    write_geo(f_quad, vol)
+    # write_geo('test.vtu', vol)
