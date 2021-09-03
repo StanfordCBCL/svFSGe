@@ -42,7 +42,7 @@ assert n_cir_q == n_cir / 4, 'radius must be divisible by four'
 n_points = (n_axi + 1) * (n_rad + 1) * n_cir
 pid = 0
 points = np.zeros((n_points, 3))
-cosy = np.zeros((n_points, 3))
+cosy = np.zeros((n_points, 6))
 line_dict = defaultdict(list)
 surf_dict = defaultdict(list)
 fiber_dict = defaultdict(list)
@@ -55,12 +55,13 @@ for ia in range(n_axi + 1):
             rad = r_inner + (r_outer - r_inner) * ir / n_rad
 
             # store normalized coordinates
-            cosy[pid, 0] = ia / n_axi
+            cosy[pid, 0] = rad # / r_outer
             cosy[pid, 1] = ic / n_cir
-            cosy[pid, 2] = rad # / r_outer
+            cosy[pid, 2] = ia / n_axi
 
             # cartesian coordinate system
             points[pid, :] = [rad * np.cos(cir), rad * np.sin(cir), axi]
+            cosy[pid, 3:] = points[pid, :]
 
             # store surfaces
             if ir == 0:
@@ -78,8 +79,8 @@ for ia in range(n_axi + 1):
 
             # store fibers
             fiber_dict['axi'] += [[0, 0, 1]]
-            fiber_dict['rad'] += [[np.cos(cir), np.sin(cir), 0]]
-            fiber_dict['cir'] += [[np.sin(cir), -np.cos(cir), 0]]
+            fiber_dict['rad'] += [[-np.cos(cir), -np.sin(cir), 0]]
+            fiber_dict['cir'] += [[-np.sin(cir), np.cos(cir), 0]]
 
             pid += 1
 
@@ -109,7 +110,7 @@ cells = np.array(cells)
 cell_data = {'GlobalElementID': [np.arange(len(cells)) + 1]}
 point_data = {'GlobalNodeID': np.arange(len(points)) + 1,
               'FIB_DIR': np.array(fiber_dict['rad']),
-              'varWallProps': cosy[:, 2]}
+              'varWallProps': cosy}
 for name, ids in surf_dict.items():
     point_data['ids_' + name] = np.zeros(len(points))
     point_data['ids_' + name][ids] = 1
