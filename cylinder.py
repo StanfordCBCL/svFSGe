@@ -25,38 +25,44 @@ height = 0.03
 # height = 15.0
 
 # number of cells in each dimension
-# n_rad = 1
-# n_cir = 4
-# n_axi = 1
-n_rad = 4
-n_cir = 200
-n_axi = 1
-# n_rad = 1
-# n_cir = 20
-# n_axi = 20
 
-n_cir_q = n_cir // 4
-assert n_cir_q == n_cir / 4, 'radius must be divisible by four'
+# radial
+n_rad = 4
+
+# circumferential
+n_cir = 50
+
+# axial
+n_axi = 1
+
+# number of circle segments (1 = full circle, 2 = half circle, ...)
+n_sec = 4
+
+# number of cells in circumferential direction (one more if the circle is closed)
+n_cell_cir = n_cir
+n_point_cir = n_cir
+n_point_eff = n_cir * n_sec
+if n_sec > 1:
+    n_point_cir += 1
 
 # create points
-n_points = (n_axi + 1) * (n_rad + 1) * n_cir
+n_points = (n_axi + 1) * (n_rad + 1) * n_point_cir
 pid = 0
 points = np.zeros((n_points, 3))
 cosy = np.zeros((n_points, 6))
-line_dict = defaultdict(list)
 surf_dict = defaultdict(list)
 fiber_dict = defaultdict(list)
 for ia in range(n_axi + 1):
     for ir in range(n_rad + 1):
-        for ic in range(n_cir):
+        for ic in range(n_point_cir):
             # cylindrical coordinate system
             axi = height * ia / n_axi
-            cir = 2 * np.pi * ic / n_cir
+            cir = 2 * np.pi * ic / n_cell_cir / n_sec
             rad = r_inner + (r_outer - r_inner) * ir / n_rad
 
             # store normalized coordinates
             cosy[pid, 0] = rad # / r_outer
-            cosy[pid, 1] = ic / n_cir
+            cosy[pid, 1] = ic / n_cell_cir / n_sec
             cosy[pid, 2] = ia / n_axi
 
             # cartesian coordinate system
@@ -66,16 +72,18 @@ for ia in range(n_axi + 1):
             # store surfaces
             if ir == 0:
                 surf_dict['inside'] += [pid]
-                if ic == 0 or ic == 2 * n_cir_q:
-                    line_dict['y_zero'] += [pid]
-                if ic == n_cir_q or ic == 3 * n_cir_q:
-                    line_dict['x_zero'] += [pid]
             if ir == n_rad:
                 surf_dict['outside'] += [pid]
             if ia == 0:
                 surf_dict['start'] += [pid]
             if ia == n_axi:
                 surf_dict['end'] += [pid]
+            # cut-surfaces only exist for cylinder sections, not the whole cylinder
+            if n_sec > 1:
+                if ic == 0:
+                    surf_dict['y_zero'] += [pid]
+                if ic == n_point_cir - 1:
+                    surf_dict['x_zero'] += [pid]
 
             # store fibers
             fiber_dict['axi'] += [[0, 0, 1]]
@@ -85,25 +93,23 @@ for ia in range(n_axi + 1):
             pid += 1
 
 # cell vertices in (cir, rad, axi)
-coords = [
-          [0, 1, 0],
+coords = [[0, 1, 0],
           [0, 1, 1],
           [1, 1, 1],
           [1, 1, 0],
           [0, 0, 0],
           [0, 0, 1],
           [1, 0, 1],
-          [1, 0, 0]
-]
+          [1, 0, 0]]
 
 # create cells
 cells = []
 for ia in range(n_axi):
     for ir in range(n_rad):
-        for ic in range(n_cir):
+        for ic in range(n_cell_cir):
             ids = []
             for c in coords:
-                ids += [(ic + c[0]) % n_cir + (ir + c[1]) * n_cir + (ia + c[2]) * (n_rad + 1) * n_cir]
+                ids += [(ic + c[0]) % n_point_cir + (ir + c[1]) * n_point_cir + (ia + c[2]) * (n_rad + 1) * n_point_cir]
             cells += [ids]
 cells = np.array(cells)
 
@@ -112,9 +118,6 @@ point_data = {'GlobalNodeID': np.arange(len(points)) + 1,
               'FIB_DIR': np.array(fiber_dict['rad']),
               'varWallProps': cosy}
 for name, ids in surf_dict.items():
-    point_data['ids_' + name] = np.zeros(len(points))
-    point_data['ids_' + name][ids] = 1
-for name, ids in line_dict.items():
     point_data['ids_' + name] = np.zeros(len(points))
     point_data['ids_' + name][ids] = 1
 
@@ -160,19 +163,6 @@ for name in surf_dict.keys():
 extract_edges = vtk.vtkExtractEdges()
 extract_edges.SetInputData(vol)
 extract_edges.Update()
-
-# threshold lines
-for name in line_dict.keys():
-    # select only current surface
-    thresh = vtk.vtkThreshold()
-    thresh.SetInputData(extract_edges.GetOutput())
-    thresh.SetInputArrayToProcess(0, 0, 0, 0, 'ids_' + name)
-    thresh.ThresholdBetween(1, 1)
-    thresh.Update()
-
-    # export surface mesh to file
-    fout = os.path.join(f_out, 'mesh-surfaces', name + '.vtp')
-    write_geo(fout, extract_surface(thresh.GetOutput()))
 
 # export volume mesh
 write_geo(os.path.join(f_out, 'mesh-complete.mesh.vtu'), vol)
