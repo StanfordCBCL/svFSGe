@@ -13,6 +13,7 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 
 # from https://github.com/StanfordCBCL/DataCuration
 sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
+sys.path.append('/Users/pfaller/work/repos/DataCuration')
 from vtk_functions import read_geo, write_geo, get_points_cells, extract_surface, threshold
 
 # output folder
@@ -198,9 +199,11 @@ for ia in range(n_axi):
     for ic in range(n_cell_cir):
         ids = []
         for c in coords:
-            ids += [c[1] * (n_axi * n_quad) - (n_quad - 1) *c[0] + (ia + c[2]) * (n_quad ** 2 + (n_tran + n_rad_s) * n_point_cir)]
+            if c[1] == 1:
+                ids += [ic + c[0] + (n_axi + 1) * n_quad ** 2 + (ia + c[2]) * n_point_cir]
+            else:
+                ids += [n_quad - 1 + (ic + c[0]) * n_quad + (ia + c[2]) * n_quad ** 2]
         cells += [ids]
-        pdb.set_trace()
 
 # generate circular g&r mesh
 for ia in range(n_axi):
@@ -208,8 +211,7 @@ for ia in range(n_axi):
         for ic in range(n_cell_cir):
             ids = []
             for c in coords:
-                ids += [(ic + c[0]) % n_point_cir + (ir + c[1]) * n_point_cir + (ia + c[2]) * (
-                            n_rad_f + n_rad_s + 1) * n_point_cir]
+                ids += [(n_axi + 1) * n_quad ** 2 + (ic + c[0]) % n_point_cir + (ir + c[1]) * n_point_cir + (ia + c[2]) * (n_rad_f + n_rad_s + 1) * n_point_cir]
             cells += [ids]
 cells = np.array(cells)
 
@@ -226,6 +228,8 @@ for name, ids in surf_dict.items():
 mesh = meshio.Mesh(points, {'hexahedron': cells})
 fname = 'tube_' + str(n_rad_f) + '+' + str(n_rad_s) + 'x' + str(n_cir) + 'x' + str(n_axi) + '.vtu'
 mesh.write(fname)
+
+sys.exit(0)
 
 # read volume mesh in vtk
 vol = read_geo(fname).GetOutput()
