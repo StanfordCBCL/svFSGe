@@ -28,7 +28,7 @@ height = 0.03
 # number of cells in each dimension
 
 # radial
-n_tran = 2
+n_tran = 10
 n_rad_s = 3
 
 # circumferential
@@ -41,6 +41,9 @@ n_axi = 1
 n_sec = 4
 
 # -------------
+assert n_cir // 2 == n_cir / 2, 'number of elements in cir direction must be divisible by two'
+assert n_tran >= n_cir // 2, 'choose number of transition elements at least half the number of cir elements'
+
 # size of quadratic mesh
 n_quad = n_cir // 2 + 1
 
@@ -66,10 +69,11 @@ fiber_dict = defaultdict(list)
 
 # generate quadratic mesh
 for ia in range(n_axi + 1):
-    for ix in range(n_quad):
-        for iy in range(n_quad):
+    for iy in range(n_quad):
+        for ix in range(n_quad):
             axi = height * ia / n_axi
-            points[pid, :] = [ix * r_inner / n_rad_f, iy * r_inner / n_rad_f, axi]
+            rad = r_inner / (n_rad_f - 1)
+            points[pid, :] = [ix * rad, iy * rad, axi]
             pid += 1
 
 # generate transition mesh
@@ -79,10 +83,10 @@ for ia in range(n_axi + 1):
             # cylindrical coordinate system
             axi = height * ia / n_axi
             cir = 2 * np.pi * ic / n_cell_cir / n_sec
-            rad = r_inner * (ir + n_quad) / n_rad_f
+            rad = r_inner * (ir + n_quad) / (n_rad_f - 1)
 
             i_trans = (ir + 1) / n_tran
-            if ic <= n_point_cir // 2:
+            if ic <= n_cell_cir // 2:
                 rad_mod = rad * ((1 - i_trans) / np.cos(cir) + i_trans)
             else:
                 rad_mod = rad * ((1 - i_trans) / np.sin(cir) + i_trans)
@@ -90,13 +94,12 @@ for ia in range(n_axi + 1):
             pid += 1
 
 # generate circular g&r mesh
-for ia in range(n_axi + 1):
     for ir in range(n_rad_s):
         for ic in range(n_point_cir):
             # cylindrical coordinate system
             axi = height * ia / n_axi
             cir = 2 * np.pi * ic / n_cell_cir / n_sec
-            rad = r_inner * (ir + n_quad) / n_rad_f
+            rad = r_inner + (r_outer - r_inner) * (ir + 1) / n_rad_s
 
             points[pid, :] = [rad * np.cos(cir), rad * np.sin(cir), axi]
             pid += 1
@@ -187,8 +190,8 @@ cells = []
 
 # generate quadratic mesh
 for ia in range(n_axi):
-    for ix in range(n_quad - 1):
-        for iy in range(n_quad - 1):
+    for iy in range(n_quad - 1):
+        for ix in range(n_quad - 1):
             ids = []
             for c in coords:
                 ids += [(iy + c[0]) * n_quad + ix + c[1] + (ia + c[2]) * n_quad ** 2]
@@ -199,33 +202,39 @@ for ia in range(n_axi):
     for ic in range(n_cell_cir):
         ids = []
         for c in coords:
-            if c[1] == 1:
-                ids += [ic + c[0] + (n_axi + 1) * n_quad ** 2 + (ia + c[2]) * n_point_cir]
-            else:
-                ids += [n_quad - 1 + (ic + c[0]) * n_quad + (ia + c[2]) * n_quad ** 2]
+                if c[1] == 1:
+                    # circular side
+                    ids += [ic + c[0] + (n_axi + 1) * n_quad ** 2 + (ia + c[2]) * (n_tran + n_rad_s) * n_point_cir]
+                else:
+                    # quadratic side
+                    if ic < n_cell_cir // 2:
+                        ids += [n_quad - 1 + (ic + c[0]) * n_quad + (ia + c[2]) * n_quad ** 2]
+                    else:
+                        ids += [n_quad ** 2 - 1 + n_cell_cir // 2 - ic - c[0] + (ia + c[2]) * n_quad ** 2]
         cells += [ids]
 
 # generate circular g&r mesh
 for ia in range(n_axi):
-    for ir in range(n_rad_f + n_rad_s):
+    for ir in range(n_tran + n_rad_s - 1):
         for ic in range(n_cell_cir):
             ids = []
             for c in coords:
-                ids += [(n_axi + 1) * n_quad ** 2 + (ic + c[0]) % n_point_cir + (ir + c[1]) * n_point_cir + (ia + c[2]) * (n_rad_f + n_rad_s + 1) * n_point_cir]
+                ids += [(n_axi + 1) * n_quad ** 2 + (ic + c[0]) % n_point_cir + (ir + c[1]) * n_point_cir + (ia + c[2]) * (n_tran + n_rad_s) * n_point_cir]
             cells += [ids]
 cells = np.array(cells)
 
 cell_data = {'GlobalElementID': [np.arange(len(cells)) + 1]}
-point_data = {'GlobalNodeID': np.arange(len(points)) + 1,
-              # 'FIB_DIR': np.array(fiber_dict['rad']),
-              'varWallProps': cosy}
-for name, ids in surf_dict.items():
-    point_data['ids_' + name] = np.zeros(len(points))
-    point_data['ids_' + name][ids] = 1
+point_data = {'GlobalNodeID': np.arange(len(points)) + 1}
+# point_data = {'GlobalNodeID': np.arange(len(points)) + 1,
+#               'FIB_DIR': np.array(fiber_dict['rad']),
+#               'varWallProps': cosy}
+# for name, ids in surf_dict.items():
+#     point_data['ids_' + name] = np.zeros(len(points))
+#     point_data['ids_' + name][ids] = 1
 
 # export mesh
-# mesh = meshio.Mesh(points, {'hexahedron': cells}, point_data=point_data, cell_data=cell_data)
-mesh = meshio.Mesh(points, {'hexahedron': cells})
+mesh = meshio.Mesh(points, {'hexahedron': cells}, point_data=point_data, cell_data=cell_data)
+# mesh = meshio.Mesh(points, {'hexahedron': cells})
 fname = 'tube_' + str(n_rad_f) + '+' + str(n_rad_s) + 'x' + str(n_cir) + 'x' + str(n_axi) + '.vtu'
 mesh.write(fname)
 
