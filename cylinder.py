@@ -16,294 +16,309 @@ sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
 sys.path.append('/Users/pfaller/work/repos/DataCuration')
 from vtk_functions import read_geo, write_geo, get_points_cells, extract_surface, threshold
 
-# output folder
-f_out = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube'
-
-# cylinder size
-r_inner = 0.64678
-r_outer = 0.687
-height = 0.03
-# height = 15.0
-
-# number of cells in each dimension
-
-# radial
-n_tran = 10
-n_rad_s = 3
-
-# circumferential
-n_cir = 8
-
-# axial
-n_axi = 1
-
-# number of circle segments (1 = full circle, 2 = half circle, ...)
-n_sec = 4
-
-# -------------
-assert n_cir // 2 == n_cir / 2, 'number of elements in cir direction must be divisible by two'
-assert n_tran >= n_cir // 2, 'choose number of transition elements at least half the number of cir elements'
-
-# size of quadratic mesh
-n_quad = n_cir // 2 + 1
-
-# number of layers in fluid mesh
-n_rad_f = n_quad + n_tran
-
-# number of cells in circumferential direction (one more if the circle is closed)
-n_cell_cir = n_cir
-n_point_cir = n_cir
-n_point_eff = n_cir * n_sec
-if n_sec > 1:
-    n_point_cir += 1
-
-# create points
-# n_points = (n_axi + 1) * (n_rad_f + n_rad_s + 1) * n_point_cir
-n_points = (n_axi + 1) * (n_quad ** 2 + (n_tran + n_rad_s) * n_point_cir)
-pid = 0
-points = np.zeros((n_points, 3))
-cosy = np.zeros((n_points, 6))
-vol_dict = defaultdict(list)
-surf_dict = defaultdict(list)
-fiber_dict = defaultdict(list)
-
-# generate quadratic mesh
-for ia in range(n_axi + 1):
-    for iy in range(n_quad):
-        for ix in range(n_quad):
-            axi = height * ia / n_axi
-            rad = r_inner / (n_rad_f - 1)
-            points[pid, :] = [ix * rad, iy * rad, axi]
-            pid += 1
-
-# generate transition mesh
-for ia in range(n_axi + 1):
-    for ir in range(n_tran):
-        for ic in range(n_point_cir):
-            # cylindrical coordinate system
-            axi = height * ia / n_axi
-            cir = 2 * np.pi * ic / n_cell_cir / n_sec
-            rad = r_inner * (ir + n_quad) / (n_rad_f - 1)
-
-            i_trans = (ir + 1) / n_tran
-            if ic <= n_cell_cir // 2:
-                rad_mod = rad * ((1 - i_trans) / np.cos(cir) + i_trans)
-            else:
-                rad_mod = rad * ((1 - i_trans) / np.sin(cir) + i_trans)
-            points[pid, :] = [rad_mod * np.cos(cir), rad_mod * np.sin(cir), axi]
-            pid += 1
-
-# generate circular g&r mesh
-    for ir in range(n_rad_s):
-        for ic in range(n_point_cir):
-            # cylindrical coordinate system
-            axi = height * ia / n_axi
-            cir = 2 * np.pi * ic / n_cell_cir / n_sec
-            rad = r_inner + (r_outer - r_inner) * (ir + 1) / n_rad_s
-
-            points[pid, :] = [rad * np.cos(cir), rad * np.sin(cir), axi]
-            pid += 1
-
-#
-#
-# for ia in range(n_axi + 1):
-#     for ir in range(n_rad_f + n_rad_s + 1):
-#         for ic in range(n_point_cir):
-#             if ir <= n_rad_f // 2:
-#                 if ic > ir * 2:
-#                     continue
-#
-#             # cylindrical coordinate system
-#             axi = height * ia / n_axi
-#             cir = 2 * np.pi * ic / n_cell_cir / n_sec
-#             if ir < n_rad_f:
-#                 rad = r_inner * ir / n_rad_f
-#             else:
-#                 rad = r_inner + (r_outer - r_inner) * (ir - n_rad_f) / n_rad_s
-#
-#             # store normalized coordinates
-#             cosy[pid, 0] = rad # / r_outer
-#             cosy[pid, 1] = ic / n_cell_cir / n_sec
-#             cosy[pid, 2] = ia / n_axi
-#
-#             # grid
-#             if ir <= n_rad_f // 2:
-#                 if ic <= ir:
-#                     xi = ir
-#                     yi = ic
-#                 else:
-#                     xi = 2 * ir - ic
-#                     yi = ir
-#                 points[pid, :] = [xi * r_inner / n_rad_f, yi * r_inner / n_rad_f, axi]
-#             # transition from grid to circular
-#             elif ir < n_rad_f:
-#                 i_curve = (ir - n_rad_f // 2) / (n_rad_f//2)
-#                 if ic <= n_point_cir // 2:
-#                     rad_mod = rad * ((1 - i_curve) / np.cos(cir) + i_curve)
-#                 else:
-#                     rad_mod = rad * ((1 - i_curve) / np.sin(cir) + i_curve)
-#                 points[pid, :] = [rad_mod * np.cos(cir), rad_mod * np.sin(cir), axi]
-#             # circular
-#             else:
-#                 points[pid, :] = [rad * np.cos(cir), rad * np.sin(cir), axi]
-#             cosy[pid, 3:] = points[pid, :]
-#
-#             # store surfaces
-#             if ir == 0:
-#                 surf_dict['inside'] += [pid]
-#             if ir == n_rad_f:
-#                 surf_dict['interface'] += [pid]
-#             if ir == n_rad_f + n_rad_s:
-#                 surf_dict['outside'] += [pid]
-#             if ia == 0:
-#                 surf_dict['start'] += [pid]
-#             if ia == n_axi:
-#                 surf_dict['end'] += [pid]
-#             # cut-surfaces only exist for cylinder sections, not the whole cylinder
-#             if n_sec > 1:
-#                 if ic == 0:
-#                     surf_dict['y_zero'] += [pid]
-#                 if ic == n_point_cir - 1:
-#                     surf_dict['x_zero'] += [pid]
-#
-#             # store fibers
-#             fiber_dict['axi'] += [[0, 0, 1]]
-#             fiber_dict['rad'] += [[-np.cos(cir), -np.sin(cir), 0]]
-#             fiber_dict['cir'] += [[-np.sin(cir), np.cos(cir), 0]]
-#
-#             pid += 1
-
 # cell vertices in (cir, rad, axi)
 coords = [[0, 1, 0],
-          [0, 1, 1],
-          [1, 1, 1],
-          [1, 1, 0],
-          [0, 0, 0],
-          [0, 0, 1],
-          [1, 0, 1],
-          [1, 0, 0]]
+        [0, 1, 1],
+        [1, 1, 1],
+        [1, 1, 0],
+        [0, 0, 0],
+        [0, 0, 1],
+        [1, 0, 1],
+        [1, 0, 0]]
+        
+class Mesh():
+    def __init__(self):
+        # output folder
+        self.f_out = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube'
 
-coords_cart = [[]]
+        # mesh parameters
+        self.p = {}
 
-# create cells
-cells = []
+        # cylinder size
+        self.p['r_inner'] = 0.64678
+        self.p['r_outer'] = 0.687
+        self.p['height'] = 0.03 # 15.0
 
-# generate quadratic mesh
-for ia in range(n_axi):
-    for iy in range(n_quad - 1):
-        for ix in range(n_quad - 1):
-            ids = []
-            for c in coords:
-                ids += [(iy + c[0]) * n_quad + ix + c[1] + (ia + c[2]) * n_quad ** 2]
-            cells += [ids]
+        # number of cells in each dimension
 
-# generate transition mesh
-for ia in range(n_axi):
-    for ic in range(n_cell_cir):
-        ids = []
-        for c in coords:
-                if c[1] == 1:
-                    # circular side
-                    ids += [ic + c[0] + (n_axi + 1) * n_quad ** 2 + (ia + c[2]) * (n_tran + n_rad_s) * n_point_cir]
-                else:
-                    # quadratic side
-                    if ic < n_cell_cir // 2:
-                        ids += [n_quad - 1 + (ic + c[0]) * n_quad + (ia + c[2]) * n_quad ** 2]
+        # radial g&r layer
+        self.p['n_rad_gr'] = 3
+
+        # radial transition layer
+        self.p['n_rad_tran'] = 10
+
+        # circumferential
+        self.p['n_cir'] = 8
+
+        # axial
+        self.p['n_axi'] = 1
+
+        # number of circle segments (1 = full circle, 2 = half circle, ...)
+        self.p['n_seg'] = 4
+
+        assert self.p['n_cir'] // 2 == self.p['n_cir'] / 2, 'number of elements in cir direction must be divisible by two'
+        assert self.p['n_rad_tran'] >= self.p['n_cir'] // 2, 'choose number of transition elements at least half the number of cir elements'
+
+        # initialize
+        # size of quadratic mesh
+        self.p['n_quad'] = self.p['n_cir'] // 2 + 1
+
+        # number of layers in fluid mesh
+        self.p['n_rad_f'] = self.p['n_quad'] + self.p['n_rad_tran']
+
+        # number of cells in circumferential direction (one more if the circle is closed)
+        self.p['n_cell_cir'] = self.p['n_cir']
+        self.p['n_point_cir'] = self.p['n_cir']
+        self.p['n_point_eff'] = self.p['n_cir'] * self.p['n_seg']
+        if self.p['n_seg'] > 1:
+            self.p['n_point_cir'] += 1
+
+        # total number of points
+        n_points = (self.p['n_axi'] + 1) * (self.p['n_quad'] ** 2 + (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir'])
+
+        # total number of cells
+        n_cells = self.p['n_axi'] * ((self.p['n_quad'] - 1) ** 2 + (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_cell_cir'])
+
+        # initialize
+        self.points = np.zeros((n_points, 3))
+        self.cells = np.zeros((n_cells, 8))
+        self.cosy = np.zeros((n_points, 6))
+        self.fiber_dict = defaultdict(lambda: np.zeros((n_points, 3)))
+        self.vol_dict = defaultdict(list)
+        self.surf_dict = defaultdict(list)
+
+    def get_surfaces_cyl(self, pid, ia, ir, ic):
+        # store surfaces
+        if ir == self.p['n_rad_tran'] - 1:
+            self.surf_dict['interface'] += [pid]
+        if ir == self.p['n_rad_tran'] + self.p['n_rad_gr'] - 1:
+            self.surf_dict['outside'] += [pid]
+        if ia == 0:
+            self.surf_dict['start'] += [pid]
+        if ia == self.p['n_axi']:
+            self.surf_dict['end'] += [pid]
+        
+        # cut-surfaces only exist for cylinder sections, not the whole cylinder
+        if self.p['n_seg'] > 1:
+            if ic == 0:
+                self.surf_dict['y_zero'] += [pid]
+            if ic == self.p['n_point_cir'] - 1:
+                self.surf_dict['x_zero'] += [pid]
+
+    def get_surfaces_cart(self, pid, ia, ix, iy):
+        # store surfaces
+        if ia == 0:
+            self.surf_dict['start'] += [pid]
+        if ia == self.p['n_axi']:
+            self.surf_dict['end'] += [pid]
+
+        # cut-surfaces only exist for cylinder sections, not the whole cylinder
+        if self.p['n_seg'] > 1:
+            if iy == 0:
+                self.surf_dict['y_zero'] += [pid]
+            if ix == 0:
+                self.surf_dict['x_zero'] += [pid]
+    
+    def generate_points(self):
+        pid = 0
+
+        # generate quadratic mesh
+        for ia in range(self.p['n_axi'] + 1):
+            for iy in range(self.p['n_quad']):
+                for ix in range(self.p['n_quad']):
+                    axi = self.p['height'] * ia / self.p['n_axi']
+                    rad = self.p['r_inner'] / (self.p['n_rad_f'] - 1)
+                    
+                    self.points[pid] = [ix * rad, iy * rad, axi]
+
+                    self.get_surfaces_cart(pid, ia, ix, iy)
+                    pid += 1
+
+        # generate transition mesh
+        for ia in range(self.p['n_axi'] + 1):
+            for ir in range(self.p['n_rad_tran']):
+                for ic in range(self.p['n_point_cir']):
+                    # cylindrical coordinate system
+                    axi = self.p['height'] * ia / self.p['n_axi']
+                    cir = 2 * np.pi * ic / self.p['n_cell_cir'] / self.p['n_seg']
+                    rad = self.p['r_inner'] * (ir + self.p['n_quad']) / (self.p['n_rad_f'] - 1)
+
+                    i_trans = (ir + 1) / self.p['n_rad_tran']
+                    if ic <= self.p['n_cell_cir'] // 2:
+                        rad_mod = rad * ((1 - i_trans) / np.cos(cir) + i_trans)
                     else:
-                        ids += [n_quad ** 2 - 1 + n_cell_cir // 2 - ic - c[0] + (ia + c[2]) * n_quad ** 2]
-        cells += [ids]
+                        rad_mod = rad * ((1 - i_trans) / np.sin(cir) + i_trans)
+                    self.points[pid] = [rad_mod * np.cos(cir), rad_mod * np.sin(cir), axi]
 
-# generate circular g&r mesh
-for ia in range(n_axi):
-    for ir in range(n_tran + n_rad_s - 1):
-        for ic in range(n_cell_cir):
-            ids = []
-            for c in coords:
-                ids += [(n_axi + 1) * n_quad ** 2 + (ic + c[0]) % n_point_cir + (ir + c[1]) * n_point_cir + (ia + c[2]) * (n_tran + n_rad_s) * n_point_cir]
-            cells += [ids]
-cells = np.array(cells)
+                    self.get_surfaces_cyl(pid, ia, ir, ic)
+                    pid += 1
 
-cell_data = {'GlobalElementID': [np.arange(len(cells)) + 1]}
-point_data = {'GlobalNodeID': np.arange(len(points)) + 1}
-# point_data = {'GlobalNodeID': np.arange(len(points)) + 1,
-#               'FIB_DIR': np.array(fiber_dict['rad']),
-#               'varWallProps': cosy}
-# for name, ids in surf_dict.items():
-#     point_data['ids_' + name] = np.zeros(len(points))
-#     point_data['ids_' + name][ids] = 1
+        # generate circular g&r mesh
+            for ir in range(self.p['n_rad_gr']):
+                for ic in range(self.p['n_point_cir']):
+                    # cylindrical coordinate system
+                    axi = self.p['height'] * ia / self.p['n_axi']
+                    cir = 2 * np.pi * ic / self.p['n_cell_cir'] / self.p['n_seg']
+                    rad = self.p['r_inner'] + (self.p['r_outer'] - self.p['r_inner']) * (ir + 1) / self.p['n_rad_gr']
 
-# export mesh
-mesh = meshio.Mesh(points, {'hexahedron': cells}, point_data=point_data, cell_data=cell_data)
-# mesh = meshio.Mesh(points, {'hexahedron': cells})
-fname = 'tube_' + str(n_rad_f) + '+' + str(n_rad_s) + 'x' + str(n_cir) + 'x' + str(n_axi) + '.vtu'
-mesh.write(fname)
+                    self.points[pid] = [rad * np.cos(cir), rad * np.sin(cir), axi]
+        
+                    # store (normalized) coordinates
+                    self.cosy[pid, 0] = rad # / r_outer
+                    self.cosy[pid, 1] = ic / self.p['n_cell_cir'] / self.p['n_seg']
+                    self.cosy[pid, 2] = ia / self.p['n_axi']
+                    self.cosy[pid, 3:] = self.points[pid, :]
+        
+                    # store fibers
+                    self.fiber_dict['axi'][pid] = [0, 0, 1]
+                    self.fiber_dict['rad'][pid] = [-np.cos(cir), -np.sin(cir), 0]
+                    self.fiber_dict['cir'][pid] = [-np.sin(cir), np.cos(cir), 0]
 
-sys.exit(0)
+                    self.get_surfaces_cyl(pid, ia, self.p['n_rad_tran'] + ir, ic)
+                    pid += 1
 
-# read volume mesh in vtk
-vol = read_geo(fname).GetOutput()
+    def generate_cells(self):
+        cid = 0
 
-# make output dirs
-os.makedirs(f_out, exist_ok=True)
-os.makedirs(os.path.join(f_out, 'mesh-surfaces'), exist_ok=True)
+        # generate quadratic mesh
+        for ia in range(self.p['n_axi']):
+            for iy in range(self.p['n_quad'] - 1):
+                for ix in range(self.p['n_quad'] - 1):
+                    ids = []
+                    for c in coords:
+                        ids += [(iy + c[0]) * self.p['n_quad'] + ix + c[1] + (ia + c[2]) * self.p['n_quad'] ** 2]
+                    self.cells[cid] = ids
+                    self.vol_dict['fluid'] += [cid]
+                    cid += 1
 
-# map point data to cell data
-p2c = vtk.vtkPointDataToCellData()
-p2c.SetInputData(vol)
-p2c.PassPointDataOn()
-p2c.Update()
-vol = p2c.GetOutput()
+        # generate transition mesh
+        for ia in range(self.p['n_axi']):
+            for ic in range(self.p['n_cell_cir']):
+                ids = []
+                for c in coords:
+                        if c[1] == 1:
+                            # circular side
+                            ids += [ic + c[0] + (self.p['n_axi'] + 1) * self.p['n_quad'] ** 2 + (ia + c[2]) * (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir']]
+                        else:
+                            # quadratic side
+                            if ic < self.p['n_cell_cir'] // 2:
+                                ids += [self.p['n_quad'] - 1 + (ic + c[0]) * self.p['n_quad'] + (ia + c[2]) * self.p['n_quad'] ** 2]
+                            else:
+                                ids += [self.p['n_quad'] ** 2 - 1 + self.p['n_cell_cir'] // 2 - ic - c[0] + (ia + c[2]) * self.p['n_quad'] ** 2]
+                self.cells[cid] = ids
+                self.vol_dict['fluid'] += [cid]
+                cid += 1
 
-# extract surfaces
-extract = vtk.vtkGeometryFilter()
-extract.SetInputData(vol)
-# extract.SetNonlinearSubdivisionLevel(0)
-extract.Update()
-surfaces = extract.GetOutput()
+        # generate circular g&r mesh
+        for ia in range(self.p['n_axi']):
+            for ir in range(self.p['n_rad_tran'] + self.p['n_rad_gr'] - 1):
+                for ic in range(self.p['n_cell_cir']):
+                    ids = []
+                    for c in coords:
+                        ids += [(self.p['n_axi'] + 1) * self.p['n_quad'] ** 2 + (ic + c[0]) % self.p['n_point_cir'] + (ir + c[1]) * self.p['n_point_cir'] + (ia + c[2]) * (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir']]
+                    self.cells[cid] = ids
 
-# threshold surfaces
-for name in surf_dict.keys():
-    # select only current surface
-    thresh = vtk.vtkThreshold()
-    thresh.SetInputData(surfaces)
-    thresh.SetInputArrayToProcess(0, 0, 0, 0, 'ids_' + name)
-    thresh.ThresholdBetween(1, 1)
-    thresh.Update()
+                    if ir < self.p['n_rad_tran'] - 1:
+                        self.vol_dict['fluid'] += [cid]
+                    else:
+                        self.vol_dict['solid'] += [cid]
+                    cid += 1
 
-    # export to file
-    fout = os.path.join(f_out, 'mesh-surfaces', name + '.vtp')
-    write_geo(fout, extract_surface(thresh.GetOutput()))
+        # assemble point data
+        point_data = {'GlobalNodeID': np.arange(len(self.points)) + 1,
+                      'FIB_DIR': np.array(self.fiber_dict['rad']),
+                      'varWallProps': self.cosy}
+        for name, ids in self.surf_dict.items():
+            point_data['ids_' + name] = np.zeros(len(self.points))
+            point_data['ids_' + name][ids] = 1
 
-extract_edges = vtk.vtkExtractEdges()
-extract_edges.SetInputData(vol)
-extract_edges.Update()
+        # assemble cell data
+        cell_data = {'GlobalElementID': np.expand_dims(np.arange(len(self.cells)) + 1, axis=1)}
+        for name, ids in self.vol_dict.items():
+            cell_data['ids_' + name] = np.zeros(len(self.cells))
+            cell_data['ids_' + name][ids] = 1
+            cell_data['ids_' + name] = np.expand_dims(cell_data['ids_' + name], axis=1)
+        cells = [('hexahedron', [cell]) for cell in self.cells]
 
-# export volume mesh
-write_geo(os.path.join(f_out, 'mesh-complete.mesh.vtu'), vol)
+        # export mesh
+        mesh = meshio.Mesh(self.points, cells, point_data=point_data, cell_data=cell_data)
+        fname = 'tube_' + str(self.p['n_rad_f']) + '+' + str(self.p['n_rad_gr']) + 'x' + str(self.p['n_cir']) + 'x' + str(self.p['n_axi']) + '.vtu'
+        mesh.write(fname)
 
-# generate quadratic mesh
-convert_quad = False
-if convert_quad:
-    # read quadratic mesh
-    f_quad = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube_quad/mesh-complete.mesh.vtu'
-    vol = read_geo(f_quad).GetOutput()
+def main():
+    mesh = Mesh()
+    mesh.generate_points()
+    mesh.generate_cells()
 
-    # calculate cell centers
-    centers = vtk.vtkCellCenters()
-    centers.SetInputData(vol)
-    centers.Update()
-    centers.VertexCellsOn()
-    centers.CopyArraysOn()
-    points = v2n(centers.GetOutput().GetPoints().GetData())
+    sys.exit(0)
 
-    # radial vector
-    rad = points
-    rad[:, 2] = 0
-    rad = (rad.T / np.linalg.norm(rad, axis=1)).T
+    # read volume mesh in vtk
+    vol = read_geo(fname).GetOutput()
 
-    arr = n2v(rad)
-    arr.SetName('FIB_DIR')
-    vol.GetCellData().AddArray(arr)
+    # make output dirs
+    os.makedirs(f_out, exist_ok=True)
+    os.makedirs(os.path.join(f_out, 'mesh-surfaces'), exist_ok=True)
 
-    write_geo(f_quad, vol)
-    # write_geo('test.vtu', vol)
+    # map point data to cell data
+    p2c = vtk.vtkPointDataToCellData()
+    p2c.SetInputData(vol)
+    p2c.PassPointDataOn()
+    p2c.Update()
+    vol = p2c.GetOutput()
+
+    # extract surfaces
+    extract = vtk.vtkGeometryFilter()
+    extract.SetInputData(vol)
+    # extract.SetNonlinearSubdivisionLevel(0)
+    extract.Update()
+    surfaces = extract.GetOutput()
+
+    # threshold surfaces
+    for name in surf_dict.keys():
+        # select only current surface
+        thresh = vtk.vtkThreshold()
+        thresh.SetInputData(surfaces)
+        thresh.SetInputArrayToProcess(0, 0, 0, 0, 'ids_' + name)
+        thresh.ThresholdBetween(1, 1)
+        thresh.Update()
+
+        # export to file
+        fout = os.path.join(f_out, 'mesh-surfaces', name + '.vtp')
+        write_geo(fout, extract_surface(thresh.GetOutput()))
+
+    extract_edges = vtk.vtkExtractEdges()
+    extract_edges.SetInputData(vol)
+    extract_edges.Update()
+
+    # export volume mesh
+    write_geo(os.path.join(f_out, 'mesh-complete.mesh.vtu'), vol)
+
+    # generate quadratic mesh
+    convert_quad = False
+    if convert_quad:
+        # read quadratic mesh
+        f_quad = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube_quad/mesh-complete.mesh.vtu'
+        vol = read_geo(f_quad).GetOutput()
+
+        # calculate cell centers
+        centers = vtk.vtkCellCenters()
+        centers.SetInputData(vol)
+        centers.Update()
+        centers.VertexCellsOn()
+        centers.CopyArraysOn()
+        points = v2n(centers.GetOutput().GetPoints().GetData())
+
+        # radial vector
+        rad = points
+        rad[:, 2] = 0
+        rad = (rad.T / np.linalg.norm(rad, axis=1)).T
+
+        arr = n2v(rad)
+        arr.SetName('FIB_DIR')
+        vol.GetCellData().AddArray(arr)
+
+        write_geo(f_quad, vol)
+        # write_geo('test.vtu', vol)
+
+if __name__ == '__main__':
+    main()
