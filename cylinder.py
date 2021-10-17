@@ -28,11 +28,12 @@ coords = [[0, 1, 0],
         
 class Mesh():
     def __init__(self):
-        # output folder
-        self.f_out = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube'
-
         # mesh parameters
         self.p = {}
+
+        # output folder
+        # self.p['f_out'] = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube'
+        self.p['f_out'] = 'mesh_tube'
 
         # cylinder size
         self.p['r_inner'] = 0.64678
@@ -86,6 +87,9 @@ class Mesh():
         self.fiber_dict = defaultdict(lambda: np.zeros((n_points, 3)))
         self.vol_dict = defaultdict(list)
         self.surf_dict = defaultdict(list)
+        
+        # file name
+        self.p['fname'] = 'tube_' + str(self.p['n_rad_f']) + '+' + str(self.p['n_rad_gr']) + 'x' + str(self.p['n_cir']) + 'x' + str(self.p['n_axi']) + '.vtu'
 
     def get_surfaces_cyl(self, pid, ia, ir, ic):
         # store surfaces
@@ -242,83 +246,85 @@ class Mesh():
 
         # export mesh
         mesh = meshio.Mesh(self.points, cells, point_data=point_data, cell_data=cell_data)
-        fname = 'tube_' + str(self.p['n_rad_f']) + '+' + str(self.p['n_rad_gr']) + 'x' + str(self.p['n_cir']) + 'x' + str(self.p['n_axi']) + '.vtu'
-        mesh.write(fname)
+        mesh.write(self.p['fname'])
+
+    def extract_svFSI(self):
+        # read volume mesh in vtk
+        vol = read_geo(self.p['fname']).GetOutput()
+
+        for f in ['solid', 'fluid']:
+            vol_f = threshold(vol, 1, 'ids_' + f).GetOutput()
+
+            # make output dirs
+            os.makedirs(os.path.join(self.p['f_out'], f), exist_ok=True)
+            os.makedirs(os.path.join(self.p['f_out'], f, 'mesh-surfaces'), exist_ok=True)
+
+            # map point data to cell data
+            p2c = vtk.vtkPointDataToCellData()
+            p2c.SetInputData(vol_f)
+            p2c.PassPointDataOn()
+            p2c.Update()
+            vol_f = p2c.GetOutput()
+
+            # extract surfaces
+            extract = vtk.vtkGeometryFilter()
+            extract.SetInputData(vol_f)
+            # extract.SetNonlinearSubdivisionLevel(0)
+            extract.Update()
+            surfaces = extract.GetOutput()
+
+            # threshold surfaces
+            for name in self.surf_dict.keys():
+                # select only current surface
+                thresh = vtk.vtkThreshold()
+                thresh.SetInputData(surfaces)
+                thresh.SetInputArrayToProcess(0, 0, 0, 0, 'ids_' + name)
+                thresh.ThresholdBetween(1, 1)
+                thresh.Update()
+
+                # export to file
+                fout = os.path.join(self.p['f_out'], f, 'mesh-surfaces', name + '.vtp')
+                write_geo(fout, extract_surface(thresh.GetOutput()))
+
+            extract_edges = vtk.vtkExtractEdges()
+            extract_edges.SetInputData(vol_f)
+            extract_edges.Update()
+
+            # export volume mesh
+            write_geo(os.path.join(self.p['f_out'], f, 'mesh-complete.mesh.vtu'), vol_f)
+
+        # # generate quadratic mesh
+        # convert_quad = False
+        # if convert_quad:
+        #     # read quadratic mesh
+        #     f_quad = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube_quad/mesh-complete.mesh.vtu'
+        #     vol = read_geo(f_quad).GetOutput()
+
+        #     # calculate cell centers
+        #     centers = vtk.vtkCellCenters()
+        #     centers.SetInputData(vol)
+        #     centers.Update()
+        #     centers.VertexCellsOn()
+        #     centers.CopyArraysOn()
+        #     points = v2n(centers.GetOutput().GetPoints().GetData())
+
+        #     # radial vector
+        #     rad = points
+        #     rad[:, 2] = 0
+        #     rad = (rad.T / np.linalg.norm(rad, axis=1)).T
+
+        #     arr = n2v(rad)
+        #     arr.SetName('FIB_DIR')
+        #     vol.GetCellData().AddArray(arr)
+
+        #     write_geo(f_quad, vol)
+        #     # write_geo('test.vtu', vol)
 
 def main():
     mesh = Mesh()
     mesh.generate_points()
     mesh.generate_cells()
-
-    sys.exit(0)
-
-    # read volume mesh in vtk
-    vol = read_geo(fname).GetOutput()
-
-    # make output dirs
-    os.makedirs(f_out, exist_ok=True)
-    os.makedirs(os.path.join(f_out, 'mesh-surfaces'), exist_ok=True)
-
-    # map point data to cell data
-    p2c = vtk.vtkPointDataToCellData()
-    p2c.SetInputData(vol)
-    p2c.PassPointDataOn()
-    p2c.Update()
-    vol = p2c.GetOutput()
-
-    # extract surfaces
-    extract = vtk.vtkGeometryFilter()
-    extract.SetInputData(vol)
-    # extract.SetNonlinearSubdivisionLevel(0)
-    extract.Update()
-    surfaces = extract.GetOutput()
-
-    # threshold surfaces
-    for name in surf_dict.keys():
-        # select only current surface
-        thresh = vtk.vtkThreshold()
-        thresh.SetInputData(surfaces)
-        thresh.SetInputArrayToProcess(0, 0, 0, 0, 'ids_' + name)
-        thresh.ThresholdBetween(1, 1)
-        thresh.Update()
-
-        # export to file
-        fout = os.path.join(f_out, 'mesh-surfaces', name + '.vtp')
-        write_geo(fout, extract_surface(thresh.GetOutput()))
-
-    extract_edges = vtk.vtkExtractEdges()
-    extract_edges.SetInputData(vol)
-    extract_edges.Update()
-
-    # export volume mesh
-    write_geo(os.path.join(f_out, 'mesh-complete.mesh.vtu'), vol)
-
-    # generate quadratic mesh
-    convert_quad = False
-    if convert_quad:
-        # read quadratic mesh
-        f_quad = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube_quad/mesh-complete.mesh.vtu'
-        vol = read_geo(f_quad).GetOutput()
-
-        # calculate cell centers
-        centers = vtk.vtkCellCenters()
-        centers.SetInputData(vol)
-        centers.Update()
-        centers.VertexCellsOn()
-        centers.CopyArraysOn()
-        points = v2n(centers.GetOutput().GetPoints().GetData())
-
-        # radial vector
-        rad = points
-        rad[:, 2] = 0
-        rad = (rad.T / np.linalg.norm(rad, axis=1)).T
-
-        arr = n2v(rad)
-        arr.SetName('FIB_DIR')
-        vol.GetCellData().AddArray(arr)
-
-        write_geo(f_quad, vol)
-        # write_geo('test.vtu', vol)
+    mesh.extract_svFSI()
 
 if __name__ == '__main__':
     main()
