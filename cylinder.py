@@ -33,7 +33,8 @@ class Mesh():
 
         # output folder
         # self.p['f_out'] = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube'
-        self.p['f_out'] = 'mesh_tube'
+        self.p['f_out'] = '/Users/pfaller/work/repos/svFSI_examples_fork/10-FSG/mesh_tube_fsi'
+        # self.p['f_out'] = 'mesh_tube'
 
         # cylinder size
         self.p['r_inner'] = 0.64678
@@ -43,13 +44,13 @@ class Mesh():
         # number of cells in each dimension
 
         # radial g&r layer
-        self.p['n_rad_gr'] = 3
+        self.p['n_rad_gr'] = 4
 
         # radial transition layer
-        self.p['n_rad_tran'] = 10
+        self.p['n_rad_tran'] = 30
 
         # circumferential
-        self.p['n_cir'] = 8
+        self.p['n_cir'] = 50
 
         # axial
         self.p['n_axi'] = 1
@@ -253,7 +254,16 @@ class Mesh():
         vol = read_geo(self.p['fname']).GetOutput()
 
         for f in ['solid', 'fluid']:
+            # select sub-mesh
             vol_f = threshold(vol, 1, 'ids_' + f).GetOutput()
+
+            # reset global ids
+            n_array = n2v(np.arange(vol_f.GetNumberOfPoints()) + 1)
+            e_array = n2v(np.arange(vol_f.GetNumberOfCells()) + 1)
+            n_array.SetName('GlobalNodeID')
+            e_array.SetName('GlobalElementID')
+            vol_f.GetPointData().AddArray(n_array)
+            vol_f.GetCellData().AddArray(e_array)
 
             # make output dirs
             os.makedirs(os.path.join(self.p['f_out'], f), exist_ok=True)
