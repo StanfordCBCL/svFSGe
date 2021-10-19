@@ -15,6 +15,7 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
 sys.path.append('/Users/pfaller/work/repos/DataCuration')
 from vtk_functions import read_geo, write_geo, get_points_cells, extract_surface, threshold
+from simulation_io import map_meshes
 
 # cell vertices in (cir, rad, axi)
 coords = [[0, 1, 0],
@@ -33,7 +34,8 @@ class Mesh():
 
         # output folder
         # self.p['f_out'] = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube'
-        self.p['f_out'] = '/Users/pfaller/work/repos/svFSI_examples_fork/10-FSG/mesh_tube_fsi'
+        self.p['f_out'] = '/home/pfaller/work/repos/svFSI_examples_fork/10-fsg/mesh_tube_fsi'
+        # self.p['f_out'] = '/Users/pfaller/work/repos/svFSI_examples_fork/10-FSG/mesh_tube_fsi'
         # self.p['f_out'] = 'mesh_tube'
 
         # cylinder size
@@ -47,13 +49,13 @@ class Mesh():
         self.p['n_rad_gr'] = 4
 
         # radial transition layer
-        self.p['n_rad_tran'] = 10
+        self.p['n_rad_tran'] = 20
 
         # circumferential
         self.p['n_cir'] = 20
 
         # axial
-        self.p['n_axi'] = 50
+        self.p['n_axi'] = 20
 
         # number of circle segments (1 = full circle, 2 = half circle, ...)
         self.p['n_seg'] = 4
@@ -88,6 +90,9 @@ class Mesh():
         self.fiber_dict = defaultdict(lambda: np.zeros((n_points, 3)))
         self.vol_dict = defaultdict(list)
         self.surf_dict = defaultdict(list)
+
+        self.point_data = {}
+        self.cell_data = {}
         
         # file name
         self.p['fname'] = 'tube_' + str(self.p['n_rad_f']) + '+' + str(self.p['n_rad_gr']) + 'x' + str(self.p['n_cir']) + 'x' + str(self.p['n_axi']) + '.vtu'
@@ -230,32 +235,38 @@ class Mesh():
                     cid += 1
 
         # assemble point data
-        point_data = {'GlobalNodeID': np.arange(len(self.points)) + 1,
+        self.point_data = {'GlobalNodeID': np.arange(len(self.points)) + 1,
                       'FIB_DIR': np.array(self.fiber_dict['rad']),
                       'varWallProps': self.cosy}
         for name, ids in self.surf_dict.items():
-            point_data['ids_' + name] = np.zeros(len(self.points))
-            point_data['ids_' + name][ids] = 1
+            self.point_data['ids_' + name] = np.zeros(len(self.points))
+            self.point_data['ids_' + name][ids] = 1
 
         # assemble cell data
-        cell_data = {'GlobalElementID': np.expand_dims(np.arange(len(self.cells)) + 1, axis=1)}
+        self.cell_data = {'GlobalElementID': np.expand_dims(np.arange(len(self.cells)) + 1, axis=1)}
         for name, ids in self.vol_dict.items():
-            cell_data['ids_' + name] = np.zeros(len(self.cells))
-            cell_data['ids_' + name][ids] = 1
-            cell_data['ids_' + name] = np.expand_dims(cell_data['ids_' + name], axis=1)
+            self.cell_data['ids_' + name] = np.zeros(len(self.cells))
+            self.cell_data['ids_' + name][ids] = 1
+            self.cell_data['ids_' + name] = np.expand_dims(self.cell_data['ids_' + name], axis=1)
         cells = [('hexahedron', [cell]) for cell in self.cells]
 
         # export mesh
-        mesh = meshio.Mesh(self.points, cells, point_data=point_data, cell_data=cell_data)
+        mesh = meshio.Mesh(self.points, cells, point_data=self.point_data, cell_data=self.cell_data)
         mesh.write(self.p['fname'])
 
     def extract_svFSI(self):
         # read volume mesh in vtk
         vol = read_geo(self.p['fname']).GetOutput()
 
+        surf_ids = {}
+        points_inlet = []
         for f in ['solid', 'fluid']:
             # select sub-mesh
             vol_f = threshold(vol, 1, 'ids_' + f).GetOutput()
+
+            # get map from old to new point data
+            ids_vol_old = v2n(vol_f.GetPointData().GetArray('GlobalNodeID')).tolist()
+            ids_vol_new = (np.arange(vol_f.GetNumberOfPoints()) + 1).tolist()
 
             # reset global ids
             n_array = n2v(np.arange(vol_f.GetNumberOfPoints()) + 1)
@@ -291,17 +302,42 @@ class Mesh():
                 thresh.SetInputArrayToProcess(0, 0, 0, 0, 'ids_' + name)
                 thresh.ThresholdBetween(1, 1)
                 thresh.Update()
+                surf = thresh.GetOutput()
 
                 # export to file
                 fout = os.path.join(self.p['f_out'], f, 'mesh-surfaces', name + '.vtp')
-                write_geo(fout, extract_surface(thresh.GetOutput()))
+                write_geo(fout, extract_surface(surf))
 
-            extract_edges = vtk.vtkExtractEdges()
-            extract_edges.SetInputData(vol_f)
-            extract_edges.Update()
+                # get new GlobalNodeIDs of surface points
+                surf_ids[f + '_' + name] = v2n(surf.GetPointData().GetArray('GlobalNodeID')).tolist()
+
+                # store inlet points (to calculate flow profile later)
+                if f == 'fluid' and name == 'start':
+                    points_inlet = v2n(surf.GetPoints().GetData())
 
             # export volume mesh
             write_geo(os.path.join(self.p['f_out'], f, 'mesh-complete.mesh.vtu'), vol_f)
+
+        # all nodes on inlet
+        i_inlet = surf_ids['fluid_start']
+
+        # quadratic flow profile (integrates to one, zero on the FS-interface)
+        rad = np.sqrt(points_inlet[:, 0]**2 + points_inlet[:, 1]**2) / self.p['r_inner']
+
+        profile = 'plug'
+        if profile == 'quad':
+            u_profile = 2 * (1 - rad ** 2)
+        elif profile == 'plug':
+            u_profile = (np.abs(rad-1) > 1e-12).astype(float)
+        else:
+            raise ValueError('Unknown profile option: ' + profile)
+
+        # export inflow profile: GlobalNodeID, weight
+        with open(os.path.join(self.p['f_out'], 'inflow_profile.dat'), 'w') as file:
+            for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
+                file.write(str(i) + ' ' + str(v))
+                if line < len(i_inlet) - 1:
+                    file.write('\n')
 
         # # generate quadratic mesh
         # convert_quad = False
