@@ -41,7 +41,7 @@ class Mesh():
         # cylinder size
         self.p['r_inner'] = 0.64678
         self.p['r_outer'] = 0.687
-        self.p['height'] = 3.0 #0.03
+        self.p['height'] = 0.3 #0.03
 
         # number of cells in each dimension
 
@@ -49,13 +49,13 @@ class Mesh():
         self.p['n_rad_gr'] = 4
 
         # radial transition layer
-        self.p['n_rad_tran'] = 20
+        self.p['n_rad_tran'] = 30
 
         # circumferential
-        self.p['n_cir'] = 20
+        self.p['n_cir'] = 30
 
         # axial
-        self.p['n_axi'] = 20
+        self.p['n_axi'] = 30
 
         # number of circle segments (1 = full circle, 2 = half circle, ...)
         self.p['n_seg'] = 4
@@ -148,16 +148,22 @@ class Mesh():
         for ia in range(self.p['n_axi'] + 1):
             for ir in range(self.p['n_rad_tran']):
                 for ic in range(self.p['n_point_cir']):
+                    # transition between two radii
+                    i_rad = (ir + 1) / self.p['n_rad_tran']
+                    rad_0 = self.p['r_inner'] * (self.p['n_quad'] - 1) / (self.p['n_rad_f'] - 1)
+                    rad_1 = self.p['r_inner']
+
                     # cylindrical coordinate system
                     axi = self.p['height'] * ia / self.p['n_axi']
                     cir = 2 * np.pi * ic / self.p['n_cell_cir'] / self.p['n_seg']
-                    rad = self.p['r_inner'] * (ir + self.p['n_quad']) / (self.p['n_rad_f'] - 1)
+                    rad = rad_0 + (rad_1 - rad_0) * i_rad
 
+                    # transition from quad mesh to circular mesh
                     i_trans = (ir + 1) / self.p['n_rad_tran']
                     if ic <= self.p['n_cell_cir'] // 2:
-                        rad_mod = rad * ((1 - i_trans) / np.cos(cir) + i_trans)
+                        rad_mod = rad * ((1 - i_trans)**2 / np.cos(cir) + 2*i_trans - i_trans**2)
                     else:
-                        rad_mod = rad * ((1 - i_trans) / np.sin(cir) + i_trans)
+                        rad_mod = rad * ((1 - i_trans)**2 / np.sin(cir) + 2*i_trans - i_trans**2)
                     self.points[pid] = [rad_mod * np.cos(cir), rad_mod * np.sin(cir), axi]
 
                     self.get_surfaces_cyl(pid, ia, ir, ic)
@@ -264,10 +270,6 @@ class Mesh():
             # select sub-mesh
             vol_f = threshold(vol, 1, 'ids_' + f).GetOutput()
 
-            # get map from old to new point data
-            ids_vol_old = v2n(vol_f.GetPointData().GetArray('GlobalNodeID')).tolist()
-            ids_vol_new = (np.arange(vol_f.GetNumberOfPoints()) + 1).tolist()
-
             # reset global ids
             n_array = n2v(np.arange(vol_f.GetNumberOfPoints()) + 1)
             e_array = n2v(np.arange(vol_f.GetNumberOfCells()) + 1)
@@ -324,11 +326,11 @@ class Mesh():
         # quadratic flow profile (integrates to one, zero on the FS-interface)
         rad = np.sqrt(points_inlet[:, 0]**2 + points_inlet[:, 1]**2) / self.p['r_inner']
 
-        profile = 'plug'
+        profile = 'quad'
         if profile == 'quad':
             u_profile = 2 * (1 - rad ** 2)
         elif profile == 'plug':
-            u_profile = (np.abs(rad-1) > 1e-12).astype(float)
+            u_profile = (np.abs(rad - 1) > 1e-12).astype(float)
         else:
             raise ValueError('Unknown profile option: ' + profile)
 
