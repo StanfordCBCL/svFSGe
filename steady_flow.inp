@@ -1,0 +1,117 @@
+#----------------------------------------------------------------
+# General simulation parameters
+
+Continue previous simulation: 0
+Number of spatial dimensions: 3
+Number of time steps: 20
+Time step size: 5e-2
+#Spectral radius of infinite time step: 0.50
+#Searched file name to trigger stop: STOP_SIM
+
+Save results to VTK format: 1
+Name prefix of saved VTK files: steady
+Increment in saving VTK files: 1
+Start saving after time step: 1
+
+Increment in saving restart files: 1
+Convert BIN to VTK format: 0
+
+Verbose: 1
+Warning: 0
+Debug: 0
+
+#----------------------------------------------------------------
+# Mesh data
+Add mesh: fluid {
+   Mesh file path: mesh_tube_fsi/fluid/mesh-complete.mesh.vtu
+   Add face: f_start {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/start.vtp
+   }
+   Add face: f_end {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/end.vtp
+   }
+   Add face: f_interface {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
+   }
+   Add face: f_x_zero {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/x_zero.vtp
+   }
+   Add face: f_y_zero {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
+   }
+   Domain: 0
+}
+
+#----------------------------------------------------------------
+# Equations
+Add equation: fluid {
+   Coupled: 0
+   Min iterations: 1
+   Max iterations: 10
+   Tolerance: 1e-6
+
+   Density: 1.0
+   Viscosity: Constant {Value: 0.04}
+   Backflow stabilization coefficient: 0.2
+
+   LS type: GMRES {
+      Preconditioner: Trilinos-ILUT
+      Tolerance: 1e-6
+      Max iterations: 100
+      Krylov space dimension: 50
+   }
+
+   Output: Spatial {
+      Velocity: t
+      Pressure: t
+   }
+
+   Add BC: f_start {
+      Type: Dir
+#      Value: -1.0
+      Impose flux: t
+      Zero out perimeter: f
+      Ramp function: t
+      Time dependence: Unsteady
+      Profile: User_defined
+      Temporal values file path: steady_load.dat
+      Spatial profile file path: mesh_tube_fsi/inflow_profile.dat
+   }
+
+   Add BC: f_x_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (1, 0, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+
+   Add BC: f_y_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 1, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+
+   Add BC: f_interface {
+      Type: Dir
+      Time dependence: Steady
+      Value: 0.0
+#      Zero out perimeter: f
+   }
+
+   Add BC: f_end {
+      Type: Neu
+      Time dependence: Resistance
+      Value: 13.9868
+   }
+
+   Add BC: f_end {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (1, 1, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+}

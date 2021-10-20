@@ -1,0 +1,230 @@
+#----------------------------------------------------------------
+# General simulation parameters
+
+Continue previous simulation: 0
+Number of spatial dimensions: 3
+Number of time steps: 80
+Time step size: 1e-4
+
+Save results to VTK format: 1
+Name prefix of saved VTK files: result
+Increment in saving VTK files: 1
+Start saving after time step: 1
+
+Increment in saving restart files: 1
+
+Verbose: 1
+Warning: 0
+Debug: 0
+
+#----------------------------------------------------------------
+# Mesh data
+Add mesh: fluid {
+   Mesh file path: mesh_tube_fsi/fluid/mesh-complete.mesh.vtu
+   Add face: f_start {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/start.vtp
+   }
+   Add face: f_end {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/end.vtp
+   }
+   Add face: f_interface {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
+   }
+   Add face: f_x_zero {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/x_zero.vtp
+   }
+   Add face: f_y_zero {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
+   }
+   Domain: 0
+   Initial pressures file path:  mesh_tube_fsi/fluid/result_020.vtu
+   Initial velocities file path: mesh_tube_fsi/fluid/result_020.vtu
+}
+
+Add mesh: solid {
+   Mesh file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
+   Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
+   Number of variable wall properties: 6
+   Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
+   Add face: s_start {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/start.vtp
+   }
+   Add face: s_end {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/end.vtp
+   }
+   Add face: s_interface {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/interface.vtp
+   }
+   Add face: s_outside {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/outside.vtp
+   }
+   Add face: s_x_zero {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/x_zero.vtp
+   }
+   Add face: s_y_zero {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/y_zero.vtp
+   }
+   Domain: 1
+}
+
+#----------------------------------------------------------------
+# Projections
+Add projection: s_interface {
+   Project from face: f_interface
+}
+
+#----------------------------------------------------------------
+# Equations
+Add equation: FSI {
+   Coupled: 1
+   Min iterations: 1
+   Max iterations: 100
+   Tolerance: 1e-6
+
+   Domain: 0 {
+      Equation: fluid
+      Density: 1.0
+      Viscosity: Constant {Value: 0.04}
+      Backflow stabilization coefficient: 0.2
+   }
+
+   Domain: 1 {
+       Equation: struct
+       Constitutive model: GR_Equilibrated
+       Density: 0.0
+       Elasticity modulus: 1.0e-16
+       Poisson ratio: 0.0
+#   Constitutive model: stVK
+#   Density: 1.0
+#   Elasticity modulus: 10.0
+#   Poisson ratio: 0.0
+   }
+
+   LS type: GMRES {
+      Preconditioner: Trilinos-ILUT
+      Tolerance: 1e-10
+      Max iterations: 100
+      Krylov space dimension: 50
+   }
+
+   Output: Spatial {
+      Displacement: t
+      Velocity: t
+      Pressure: t
+   }
+
+   Output: Alias {
+      Displacement: FS_Displacement
+   }
+
+   Add BC: f_start {
+      Type: Dir
+      Value: -1.0
+      Impose flux: t
+      Zero out perimeter: f
+#      Ramp function: t
+      Time dependence: Steady #Unsteady
+      Profile: User_defined
+#      Temporal values file path: steady_load.dat
+      Spatial profile file path: mesh_tube_fsi/inflow_profile.dat
+   }
+
+   Add BC: f_x_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (1, 0, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+
+   Add BC: f_y_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 1, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+
+   Add BC: f_end {
+      Type: Neu
+      Time dependence: Resistance
+      Value: 13.9868
+   }
+
+   Add BC: f_end {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (1, 1, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+
+   Add BC: s_start {
+      Type: Dir
+      Value: 0.0
+      Impose on state variable integral: t
+      Zero out perimeter: f
+      Effective direction: (0, 0, 1)
+   }
+
+   Add BC: s_end {
+      Type: Dir
+      Value: 0.0
+      Impose on state variable integral: t
+      Zero out perimeter: f
+      Effective direction: (0, 0, 1)
+   }
+
+   Add BC: s_x_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (1, 0, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+
+   Add BC: s_y_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 1, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+}
+
+Add equation: mesh {
+   Coupled: 1
+   Min iterations: 1
+   Max iterations: 5
+   Tolerance: 1e-4
+   Poisson ratio: 0.3
+
+   LS type: CG {
+      Preconditioner: FSILS
+      Tolerance: 1e-4
+   }
+
+   Output: Spatial {
+      Displacement: t
+   }
+
+   Add BC: f_start {
+      Type: Dir
+      Value: 0.0
+   }
+
+   Add BC: f_end {
+      Type: Dir
+      Value: 0.0
+   }
+
+   Add BC: f_x_zero {
+      Type: Dir
+      Value: 0.0
+   }
+
+   Add BC: f_y_zero {
+      Type: Dir
+      Value: 0.0
+   }
+}
