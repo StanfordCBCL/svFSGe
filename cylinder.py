@@ -34,28 +34,28 @@ class Mesh():
 
         # output folder
         # self.p['f_out'] = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube'
-        self.p['f_out'] = '/home/pfaller/work/repos/svFSI_examples_fork/10-fsg/mesh_tube_fsi'
+        # self.p['f_out'] = '/home/pfaller/work/repos/svFSI_examples_fork/10-fsg/mesh_tube_fsi'
         # self.p['f_out'] = '/Users/pfaller/work/repos/svFSI_examples_fork/10-FSG/mesh_tube_fsi'
-        # self.p['f_out'] = 'mesh_tube'
+        self.p['f_out'] = 'mesh_tube_fsi'
 
         # cylinder size
         self.p['r_inner'] = 0.64678
         self.p['r_outer'] = 0.687
-        self.p['height'] = 0.3 #0.03
+        self.p['height'] = 0.3
 
         # number of cells in each dimension
 
         # radial g&r layer
-        self.p['n_rad_gr'] = 4
+        self.p['n_rad_gr'] = 8
 
         # radial transition layer
-        self.p['n_rad_tran'] = 30
+        self.p['n_rad_tran'] = 40
 
         # circumferential
-        self.p['n_cir'] = 30
+        self.p['n_cir'] = 80
 
         # axial
-        self.p['n_axi'] = 30
+        self.p['n_axi'] = 40
 
         # number of circle segments (1 = full circle, 2 = half circle, ...)
         self.p['n_seg'] = 4
@@ -146,7 +146,7 @@ class Mesh():
 
         # generate transition mesh
         for ia in range(self.p['n_axi'] + 1):
-            for ir in range(self.p['n_rad_tran']):
+            for ir in range(self.p['n_rad_tran'] - 1):
                 for ic in range(self.p['n_point_cir']):
                     # transition between two radii
                     i_rad = (ir + 1) / self.p['n_rad_tran']
@@ -170,12 +170,12 @@ class Mesh():
                     pid += 1
 
         # generate circular g&r mesh
-            for ir in range(self.p['n_rad_gr']):
+            for ir in range(self.p['n_rad_gr'] + 1):
                 for ic in range(self.p['n_point_cir']):
                     # cylindrical coordinate system
                     axi = self.p['height'] * ia / self.p['n_axi']
                     cir = 2 * np.pi * ic / self.p['n_cell_cir'] / self.p['n_seg']
-                    rad = self.p['r_inner'] + (self.p['r_outer'] - self.p['r_inner']) * (ir + 1) / self.p['n_rad_gr']
+                    rad = self.p['r_inner'] + (self.p['r_outer'] - self.p['r_inner']) * (ir) / self.p['n_rad_gr']
 
                     self.points[pid] = [rad * np.cos(cir), rad * np.sin(cir), axi]
         
@@ -190,7 +190,7 @@ class Mesh():
                     self.fiber_dict['rad'][pid] = [-np.cos(cir), -np.sin(cir), 0]
                     self.fiber_dict['cir'][pid] = [-np.sin(cir), np.cos(cir), 0]
 
-                    self.get_surfaces_cyl(pid, ia, self.p['n_rad_tran'] + ir, ic)
+                    self.get_surfaces_cyl(pid, ia, self.p['n_rad_tran'] + ir - 1, ic)
                     pid += 1
 
     def generate_cells(self):
@@ -260,7 +260,7 @@ class Mesh():
         mesh = meshio.Mesh(self.points, cells, point_data=self.point_data, cell_data=self.cell_data)
         mesh.write(self.p['fname'])
 
-    def extract_svFSI(self):
+    def extract_svFSI(self, displacement=None):
         # read volume mesh in vtk
         vol = read_geo(self.p['fname']).GetOutput()
 
@@ -269,6 +269,11 @@ class Mesh():
         for f in ['solid', 'fluid']:
             # select sub-mesh
             vol_f = threshold(vol, 1, 'ids_' + f).GetOutput()
+
+            # if f == 'fluid' and displacement is not None:
+            #     disp_vol = read_geo(displacement).GetOutput()
+            #     disp = v2n(disp_vol.GetPointDat().GetArray('Displacement'))
+            #     pdb.set_trace()
 
             # reset global ids
             n_array = n2v(np.arange(vol_f.GetNumberOfPoints()) + 1)
@@ -368,11 +373,12 @@ class Mesh():
         #     write_geo(f_quad, vol)
         #     # write_geo('test.vtu', vol)
 
-def main():
+
+def generate_mesh(displacement=None):
     mesh = Mesh()
     mesh.generate_points()
     mesh.generate_cells()
-    mesh.extract_svFSI()
+    mesh.extract_svFSI(displacement)
 
 if __name__ == '__main__':
-    main()
+    generate_mesh()
