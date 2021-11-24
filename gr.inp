@@ -1,8 +1,9 @@
 #----------------------------------------------------------------
 # General simulation parameters
 
+Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 1
+Number of time steps: 11
 Time step size: 1.0
 
 Save results to VTK format: 1
@@ -12,11 +13,9 @@ Start saving after time step: 1
 
 Increment in saving restart files: 1
 
-Continue previous simulation: 1
-#Starting time step: 1
 Overwrite restart file: 0
 Restart file name: gr
-Save results in folder: 1-procs
+#Save results in folder: 1-procs
 
 Verbose: 1
 Warning: 0
@@ -55,13 +54,18 @@ Add mesh: msh {
 Add equation: struct {
    Coupled: 1
    Min iterations: 1
-   Max iterations: 20
+   Max iterations: 30
    Tolerance: 1e-8
 
    Constitutive model: GR_Equilibrated
    Density: 0.0
    Elasticity modulus: 1.0e-16
    Poisson ratio: 0.0
+
+#   Constitutive model: stVK
+#   Density: 0.0
+#   Elasticity modulus: 1000.0
+#   Poisson ratio: 0.0
 
    Output: Spatial {
       Displacement: t
@@ -77,13 +81,14 @@ Add equation: struct {
 
    LS type: GMRES
    {
-      Tolerance:           1e-6
-      Absolute tolerance:   1e-6
-      Max iterations:      1000
-      Krylov space dimension: 1000
-      Preconditioner:  Trilinos-Diagonal
+      Tolerance:           1e-9
+      Absolute tolerance:   1e-9
+      Max iterations:      300
+      Krylov space dimension: 300
+#      Preconditioner:  Trilinos-GR
    }
 
+   # plane strain
    Add BC: start {
       Type: Dir
       Value: 0.0
@@ -91,7 +96,6 @@ Add equation: struct {
       Impose on state variable integral: t
       Zero out perimeter: f
    }
-
    Add BC: end {
       Type: Dir
       Value: 0.0
@@ -100,22 +104,7 @@ Add equation: struct {
       Zero out perimeter: f
    }
 
-   Add BC: inside {
-      Type: Dir
-      Value: 0.0
-      Effective direction: (0, 0, 1)
-      Impose on state variable integral: t
-      Zero out perimeter: f
-   }
-
-   Add BC: outside {
-      Type: Dir
-      Value: 0.0
-      Effective direction: (0, 0, 1)
-      Impose on state variable integral: t
-      Zero out perimeter: f
-   }
-
+   # symmetry
    Add BC: x_zero {
       Type: Dir
       Value: 0.0
@@ -123,7 +112,6 @@ Add equation: struct {
       Impose on state variable integral: t
       Zero out perimeter: f
    }
-
    Add BC: y_zero {
       Type: Dir
       Value: 0.0
@@ -132,27 +120,21 @@ Add equation: struct {
       Zero out perimeter: f
    }
 
-   Add BC: x_zero {
-      Type: Dir
-      Value: 0.0
-      Effective direction: (0, 0, 1)
-      Impose on state variable integral: t
-      Zero out perimeter: f
-   }
-
-   Add BC: y_zero {
-      Type: Dir
-      Value: 0.0
-      Effective direction: (0, 0, 1)
-      Impose on state variable integral: t
-      Zero out perimeter: f
-   }
-
+   # step 1: pre-stressing
    Add BC: inside {
       Type: Neu
-      Time dependence: Spatial
-      Spatial values file path: pressure_interface.vtp
-#      Ramp function: t
+      Time dependence: Unsteady
+      Temporal values file path: load_pre.dat
+      Ramp function: t
+      Follower pressure load: t
+   }
+
+   # step 2: g&r
+   Add BC: inside {
+      Type: Neu
+      Time dependence: Unsteady
+      Temporal values file path: load_gr.dat
+      Ramp function: t
       Follower pressure load: t
    }
 }

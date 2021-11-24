@@ -3,11 +3,11 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 80
-Time step size: 1e-4
+Number of time steps: 10
+Time step size: 5e-2
 
 Save results to VTK format: 1
-Name prefix of saved VTK files: result
+Name prefix of saved VTK files: fsg
 Increment in saving VTK files: 1
 Start saving after time step: 1
 
@@ -37,8 +37,8 @@ Add mesh: fluid {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
    }
    Domain: 0
-   Initial pressures file path:  mesh_tube_fsi/fluid/result_020.vtu
-   Initial velocities file path: mesh_tube_fsi/fluid/result_020.vtu
+   Initial pressures file path:  10-procs/steady_130.vtu
+   Initial velocities file path: 10-procs/steady_130.vtu
 }
 
 Add mesh: solid {
@@ -95,15 +95,16 @@ Add equation: FSI {
        Elasticity modulus: 1.0e-16
        Poisson ratio: 0.0
 #   Constitutive model: stVK
-#   Density: 1.0
-#   Elasticity modulus: 10.0
+#   Density: 0.0
+#   Elasticity modulus: 10000.0
 #   Poisson ratio: 0.0
    }
 
    LS type: GMRES {
-      Preconditioner: Trilinos-ILUT
-      Tolerance: 1e-10
-      Max iterations: 100
+      Preconditioner: Trilinos-GR
+#      Preconditioner: Trilinos-ILUT
+      Tolerance: 1e-3
+      Max iterations: 500
       Krylov space dimension: 50
    }
 
@@ -119,7 +120,7 @@ Add equation: FSI {
 
    Add BC: f_start {
       Type: Dir
-      Value: -1.0
+      Value: -0.1
       Impose flux: t
       Zero out perimeter: f
 #      Ramp function: t
@@ -129,6 +130,7 @@ Add equation: FSI {
       Spatial profile file path: mesh_tube_fsi/inflow_profile.dat
    }
 
+   # fluid: symmetry
    Add BC: f_x_zero {
       Type: Dir
       Value: 0.0
@@ -136,7 +138,6 @@ Add equation: FSI {
       Impose on state variable integral: t
       Zero out perimeter: f
    }
-
    Add BC: f_y_zero {
       Type: Dir
       Value: 0.0
@@ -145,20 +146,30 @@ Add equation: FSI {
       Zero out perimeter: f
    }
 
+   # fluid: outflow resistance
    Add BC: f_end {
       Type: Neu
       Time dependence: Resistance
-      Value: 13.9868
+      Value: 139.868
    }
 
+   # fluid: outflow normal to surface
    Add BC: f_end {
       Type: Dir
       Value: 0.0
-      Effective direction: (1, 1, 0)
+      Effective direction: (1, 0, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+   Add BC: f_end {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 1, 0)
       Impose on state variable integral: t
       Zero out perimeter: f
    }
 
+   # solid: plane strain
    Add BC: s_start {
       Type: Dir
       Value: 0.0
@@ -166,7 +177,6 @@ Add equation: FSI {
       Zero out perimeter: f
       Effective direction: (0, 0, 1)
    }
-
    Add BC: s_end {
       Type: Dir
       Value: 0.0
@@ -175,6 +185,7 @@ Add equation: FSI {
       Effective direction: (0, 0, 1)
    }
 
+   # solid: symmetry
    Add BC: s_x_zero {
       Type: Dir
       Value: 0.0
@@ -182,7 +193,6 @@ Add equation: FSI {
       Impose on state variable integral: t
       Zero out perimeter: f
    }
-
    Add BC: s_y_zero {
       Type: Dir
       Value: 0.0
@@ -212,17 +222,14 @@ Add equation: mesh {
       Type: Dir
       Value: 0.0
    }
-
    Add BC: f_end {
       Type: Dir
       Value: 0.0
    }
-
    Add BC: f_x_zero {
       Type: Dir
       Value: 0.0
    }
-
    Add BC: f_y_zero {
       Type: Dir
       Value: 0.0

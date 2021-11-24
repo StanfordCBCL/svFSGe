@@ -41,21 +41,21 @@ class Mesh():
         # cylinder size
         self.p['r_inner'] = 0.64678
         self.p['r_outer'] = 0.687
-        self.p['height'] = 0.3
+        self.p['height'] = 1.0
 
         # number of cells in each dimension
 
         # radial g&r layer
-        self.p['n_rad_gr'] = 8
+        self.p['n_rad_gr'] = 4
 
         # radial transition layer
         self.p['n_rad_tran'] = 40
 
         # circumferential
-        self.p['n_cir'] = 80
+        self.p['n_cir'] = 20
 
         # axial
-        self.p['n_axi'] = 40
+        self.p['n_axi'] = 20
 
         # number of circle segments (1 = full circle, 2 = half circle, ...)
         self.p['n_seg'] = 4
