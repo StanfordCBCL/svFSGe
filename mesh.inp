@@ -46,7 +46,7 @@ Add equation: struct {
    Max iterations: 20
    Tolerance: 1e-6
 
-   Constitutive model: nHK
+   Constitutive model: stVK
    Density: 0.0
    Elasticity modulus: 1.0
    Poisson ratio: 0.0
@@ -54,17 +54,29 @@ Add equation: struct {
    LS type: CG {
       Preconditioner: FSILS
       Tolerance: 1e-4
+      Max iterations:      1000
    }
 
 #   LS type: GMRES {
 #      Preconditioner: Trilinos-ILUT
 #      Tolerance: 1e-3
-#      Max iterations: 100
 #   }
 
    Output: Spatial {
       Displacement: t
    }
+
+   # prescribed displacements from g&r
+   Add BC: f_interface {
+      Type: Dir
+      Time dependence: General
+      Temporal and spatial values file path: interface_displacement.dat
+      Zero out perimeter: f
+#      Type: Neu
+#      Time dependence: Steady
+#      Value: 0.01
+#      Follower pressure load: t
+    }
 
    # symmetry
    Add BC: f_x_zero {
@@ -96,12 +108,5 @@ Add equation: struct {
       Impose on state variable integral: t
       Zero out perimeter: f
       Effective direction: (0, 0, 1)
-   }
-
-   # prescribed displacements from g&r
-   Add BC: f_interface {
-      Type: Dir
-      Time dependence: General
-      Temporal and spatial values file path: interface_displacement.dat
    }
 }

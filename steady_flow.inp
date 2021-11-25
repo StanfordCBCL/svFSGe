@@ -3,10 +3,10 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 30
-Time step size: 0.1
-#Spectral radius of infinite time step: 0.50
-#Searched file name to trigger stop: STOP_SIM
+Number of time steps: 100
+Time step size: 0.001
+
+#Simulation initialization file path: fluid/mesh.vtu
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: steady
@@ -66,6 +66,7 @@ Add equation: fluid {
       Pressure: t
    }
 
+   # fluid: inflow
    Add BC: f_start {
       Type: Dir
       Impose flux: t
