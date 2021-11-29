@@ -42,18 +42,13 @@ class FSG():
         self.p['p0'] = 13.9868
 
         # fluid flow
-        # todo: set in python
-        self.p['q0'] = 0.01
+        self.p['q0'] = 0.05
 
         # maximum number of time steps
         self.p['nmax'] = 10
 
         # maximum load increase
         self.p['fmax'] = 1.5
-
-        # maximum asymmetry (one-way coupling only)
-        # todo: replace by q*resistance
-        self.p['vmax'] = 0.1
 
         # generate and initialize mesh
         generate_mesh()
@@ -70,9 +65,13 @@ class FSG():
 
     def main_one_way(self):
         for i in list(range(0, self.p['nmax'] + 1)):
-            f = 1.0 + np.max([i, 0]) / self.p['nmax'] * (self.p['fmax'] - 1.0)
-            v = self.p['vmax'] * np.max([i, 0]) / self.p['nmax']
-            self.pressure_gradient(f, v)
+            # calculate pressure load increase
+            fp = 1.0 + np.max([i, 0]) / self.p['nmax'] * (self.p['fmax'] - 1.0)
+
+            # step 1: steady-state fluid (analytical solution)
+            self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
+
+            # step 2: solid g&r
             self.step_gr()
 
         # time stamp
@@ -95,10 +94,11 @@ class FSG():
             j = i + 1
 
             # step 0: set fluid distal pressure and initialize fluid solution
-            self.set_load(self.p['p0'] * f)
-            self.initialize_fluid(self.p['p0'] * f, self.p['q0'])
+            self.set_pressure(self.p['p0'] * f)
+            self.initialize_fluid(self.p['p0'] * f, self.p['q0'], 'vol')
 
             # step 1: steady-state fluid
+            self.set_flow(self.p['q0'])
             self.step_fluid()
             self.project_f2s(j)
 
@@ -124,12 +124,15 @@ class FSG():
     def initialize_mesh(self):
         shutil.copyfile('mesh_tube_fsi/fluid/mesh-complete.mesh.vtu', 'fluid/mesh.vtu')
 
-    def initialize_fluid(self, p, q):
-        vol = read_geo('fluid/mesh.vtu').GetOutput()
+    def initialize_fluid(self, p, q, mode):
+        if mode == 'vol':
+            geo = read_geo('fluid/mesh.vtu').GetOutput()
+        elif mode == 'interface':
+            geo = self.interface_s
         arrays = {}
 
         # mesh points
-        points =  v2n(vol.GetPoints().GetData())
+        points =  v2n(geo.GetPoints().GetData())
 
         # normalized axial coordinate
         ax = points[:, 2].copy()
@@ -143,24 +146,35 @@ class FSG():
 
         # estimate linear pressure gradient
         res = 8 * 0.04 * amax / np.pi / rmax**4
-        arrays['Pressure'] = p * np.ones(vol.GetNumberOfPoints()) + res * q * (1 - ax)
+        arrays['Pressure'] = p * np.ones(geo.GetNumberOfPoints()) + res * q * (1 - ax)
 
         # estimate quadratic flow profile
-        arrays['Velocity'] = np.zeros((vol.GetNumberOfPoints(), 3))
+        arrays['Velocity'] = np.zeros((geo.GetNumberOfPoints(), 3))
         arrays['Velocity'][:, 2] = 4 * q / (rmax**2 * np.pi) * 2 * (1 - rad**2)
 
-        # add arrays and write to file
+        # add arrays
         for n, a in arrays.items():
             array = n2v(a)
             array.SetName(n)
-            vol.GetPointData().AddArray(array)
-        write_geo('fluid/mesh.vtu', vol)
+            geo.GetPointData().AddArray(array)
+
+        # write to file
+        if mode == 'vol':
+            write_geo('fluid/mesh.vtu', geo)
+        elif mode == 'interface':
+            write_geo(self.p['f_load'], geo)
         
-    def set_load(self, p):
+    def set_pressure(self, p):
         with open('steady_pressure.dat', 'w') as f:
             f.write('2 1\n')
             f.write('0.0 ' + str(p) + '\n')
             f.write('100.0 ' + str(p) + '\n')
+        
+    def set_flow(self, q):
+        with open('steady_flow.dat', 'w') as f:
+            f.write('2 1\n')
+            f.write('0.0 ' + str(-q) + '\n')
+            f.write('100.0 ' + str(-q) + '\n')
 
     def step_fluid(self):
         subprocess.run(shlex.split('mpirun -np 10 ' + self.p['exe_fluid'] + ' ' + self.p['inp_fluid']))
@@ -170,21 +184,6 @@ class FSG():
 
     def step_mesh(self):
         subprocess.run(shlex.split('mpirun -np 10 ' + self.p['exe_fluid'] + ' ' + self.p['inp_mesh']))
-
-    def pressure_gradient(self, f, var):
-        # todo: replace by q*resistance
-        pressure_s = f * self.p['p0'] * np.ones(self.interface_s.GetNumberOfPoints())
-
-        # apply axial gradient
-        if var > 0.0:
-            points = v2n(self.interface_s.GetPoints().GetData())
-            z_max = np.max(points[:, 2]) - np.min(points[:, 2])
-            pressure_s *= 1.0 - var / 2.0 + var * points[:, 2] / z_max
-
-        array = n2v(pressure_s)
-        array.SetName('Pressure')
-        self.interface_s.GetPointData().AddArray(array)
-        write_geo(self.p['f_load'], self.interface_s)
 
     def project_f2s(self, i, f=None, p0=None):
         t_end = 30
@@ -249,4 +248,5 @@ class FSG():
 
 if __name__ == '__main__':
     fsg = FSG()
+    # fsg.main_one_way()
     fsg.main_two_way()
