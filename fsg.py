@@ -13,6 +13,7 @@ import shutil
 import datetime
 import os
 import vtk
+import json
 
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 from vtk.util.numpy_support import numpy_to_vtk as n2v
@@ -50,6 +51,9 @@ class FSG():
         # maximum load increase
         self.p['fmax'] = 1.5
 
+        # make folders
+        os.makedirs('fluid', exist_ok=True)
+
         # generate and initialize mesh
         generate_mesh()
         self.initialize_mesh()
@@ -70,20 +74,13 @@ class FSG():
 
             # step 1: steady-state fluid (analytical solution)
             self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
+            shutil.copyfile(self.p['f_load'], 'fluid/steady_' + str(i) + '.vtu')
 
             # step 2: solid g&r
             self.step_gr()
-
-        # time stamp
-        ct = str(datetime.datetime.now()).replace(' ', '_').replace(':', '-')
-
-        # folder name
-        f_out = 'gr_res_' + ct
-
-        # archive
-        shutil.move('1-procs', f_out)
-        shutil.copyfile(self.p['f_load'], os.path.join(f_out, self.p['f_load']))
-        shutil.copytree('mesh_tube_fsi', os.path.join(f_out, 'mesh_tube_fsi'))
+        
+        # archive results
+        self.archive('1-way_res')
 
     def main_two_way(self):
         for i in list(range(0, self.p['nmax'] + 1)):
@@ -109,17 +106,29 @@ class FSG():
             # step 3: deform mesh
             self.step_mesh()
             self.project_disp(j)
-
+        
+        # archive results
+        self.archive('2-way_res')
+    
+    def initialize(self):
+        os.makedirs('fluid', exist_ok=True)
+    
+    def archive(self, name):
         # time stamp
         ct = str(datetime.datetime.now()).replace(' ', '_').replace(':', '-')
 
         # folder name
-        f_out = 'fsg_res_' + ct
+        f_out = name + '_' + ct
 
-        # archive
+        # move results
         shutil.move('1-procs', os.path.join(f_out, 'gr'))
-        shutil.copytree('fluid', os.path.join(f_out, 'fluid'))
-        shutil.copytree('mesh_tube_fsi', os.path.join(f_out, 'mesh_tube_fsi'))
+        shutil.move('fluid', os.path.join(f_out, 'fluid'))
+        shutil.move('mesh_tube_fsi', os.path.join(f_out, 'mesh_tube_fsi'))
+
+        # save parameters
+        file_name = os.path.join(f_out, 'fsg.json')
+        with open(file_name, 'w') as file:
+            json.dump(self.p, file, indent=4, sort_keys=True)
 
     def initialize_mesh(self):
         shutil.copyfile('mesh_tube_fsi/fluid/mesh-complete.mesh.vtu', 'fluid/mesh.vtu')
@@ -189,20 +198,16 @@ class FSG():
         t_end = 30
         shutil.copyfile('10-procs/steady_' + str(t_end).zfill(3) + '.vtu', 'fluid/steady_' + str(i) + '.vtu')
 
+        # read fluid pressure
         res = read_geo('fluid/steady_' + str(i) + '.vtu').GetOutput()
         pressure_f = v2n(res.GetPointData().GetArray('Pressure'))
-        if f is not None:
-            # constant pressure
-            if f < 1:
-                pressure_s = p0 * np.ones(self.interface_s.GetNumberOfPoints())
-            # pressure gradient from fluid
-            else:
-                pressure_f *= f
-        else:
-            tree = scipy.spatial.KDTree(self.points_s)
-            _, i_fs = tree.query(self.points_f)
-            pressure_s = pressure_f[self.nodes_f - 1][i_fs]
 
+        # map fluid pressure to solid mesh
+        tree = scipy.spatial.KDTree(self.points_s)
+        _, i_fs = tree.query(self.points_f)
+        pressure_s = pressure_f[self.nodes_f - 1][i_fs]
+
+        # export to file
         array = n2v(pressure_s)
         array.SetName('Pressure')
         self.interface_s.GetPointData().AddArray(array)
@@ -248,5 +253,5 @@ class FSG():
 
 if __name__ == '__main__':
     fsg = FSG()
-    # fsg.main_one_way()
-    fsg.main_two_way()
+    fsg.main_one_way()
+    # fsg.main_two_way()

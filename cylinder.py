@@ -6,6 +6,7 @@ import meshio
 import sys
 import vtk
 import os
+import json
 
 from collections import defaultdict
 from vtk.util.numpy_support import numpy_to_vtk as n2v
@@ -41,7 +42,7 @@ class Mesh():
         # cylinder size
         self.p['r_inner'] = 0.64678
         self.p['r_outer'] = 0.687
-        self.p['height'] = 1.0
+        self.p['height'] = 10.0
 
         # number of cells in each dimension
 
@@ -379,6 +380,11 @@ def generate_mesh(displacement=None):
     mesh.generate_points()
     mesh.generate_cells()
     mesh.extract_svFSI(displacement)
+
+    # save parameters
+    file_name = os.path.join(mesh.p['f_out'], 'cylinder.json')
+    with open(file_name, 'w') as file:
+        json.dump(mesh.p, file, indent=4, sort_keys=True)
 
 if __name__ == '__main__':
     generate_mesh()
