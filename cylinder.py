@@ -27,44 +27,23 @@ coords = [[0, 1, 0],
         [0, 0, 1],
         [1, 0, 1],
         [1, 0, 0]]
-        
+
+
 class Mesh():
-    def __init__(self):
+    def __init__(self, f_params=None):
         # mesh parameters
         self.p = {}
 
-        # output folder
-        # self.p['f_out'] = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube'
-        # self.p['f_out'] = '/home/pfaller/work/repos/svFSI_examples_fork/10-fsg/mesh_tube_fsi'
-        # self.p['f_out'] = '/Users/pfaller/work/repos/svFSI_examples_fork/10-FSG/mesh_tube_fsi'
-        self.p['f_out'] = 'mesh_tube_fsi'
+        # set mesh parameters (load from json file if given)
+        if f_params is None:
+            self.set_params()
+        else:
+            self.load_params(f_params)
 
-        # cylinder size
-        self.p['r_inner'] = 0.64678
-        self.p['r_outer'] = 0.687
-        self.p['height'] = 10.0
-
-        # number of cells in each dimension
-
-        # radial g&r layer
-        self.p['n_rad_gr'] = 4
-
-        # radial transition layer
-        self.p['n_rad_tran'] = 40
-
-        # circumferential
-        self.p['n_cir'] = 20
-
-        # axial
-        self.p['n_axi'] = 20
-
-        # number of circle segments (1 = full circle, 2 = half circle, ...)
-        self.p['n_seg'] = 4
-
+        # check parameters
         assert self.p['n_cir'] // 2 == self.p['n_cir'] / 2, 'number of elements in cir direction must be divisible by two'
         assert self.p['n_rad_tran'] >= self.p['n_cir'] // 2, 'choose number of transition elements at least half the number of cir elements'
 
-        # initialize
         # size of quadratic mesh
         self.p['n_quad'] = self.p['n_cir'] // 2 + 1
 
@@ -84,7 +63,7 @@ class Mesh():
         # total number of cells
         n_cells = self.p['n_axi'] * ((self.p['n_quad'] - 1) ** 2 + (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_cell_cir'])
 
-        # initialize
+        # initialize arrays
         self.points = np.zeros((n_points, 3))
         self.cells = np.zeros((n_cells, 8))
         self.cosy = np.zeros((n_points, 6))
@@ -97,6 +76,47 @@ class Mesh():
         
         # file name
         self.p['fname'] = 'tube_' + str(self.p['n_rad_f']) + '+' + str(self.p['n_rad_gr']) + 'x' + str(self.p['n_cir']) + 'x' + str(self.p['n_axi']) + '.vtu'
+
+    def set_params(self):
+        # output folder
+        self.p['f_out'] = 'mesh_tube_fsi'
+
+        # cylinder size
+        self.p['r_inner'] = 0.64678
+        self.p['r_outer'] = 0.687
+        self.p['height'] = 0.3
+
+        # number of cells in each dimension
+
+        # radial g&r layer
+        self.p['n_rad_gr'] = 4
+
+        # radial transition layer
+        self.p['n_rad_tran'] = 40
+
+        # circumferential
+        self.p['n_cir'] = 40
+
+        # axial
+        self.p['n_axi'] = 10
+
+        # number of circle segments (1 = full circle, 2 = half circle, ...)
+        self.p['n_seg'] = 4
+
+    def load_params(self, file_name):
+        # read parameters from json file
+        with open(file_name, 'r') as file:
+            param = json.load(file)
+
+        # set parameters
+        for k, v in param.items():
+            self.p[k] = v
+
+    def save_params(self):
+        # save parameters to json file
+        file_name = os.path.join(self.p['f_out'], 'cylinder.json')
+        with open(file_name, 'w') as file:
+            json.dump(self.p, file, indent=4, sort_keys=True)
 
     def get_surfaces_cyl(self, pid, ia, ir, ic):
         # store surfaces
@@ -261,7 +281,7 @@ class Mesh():
         mesh = meshio.Mesh(self.points, cells, point_data=self.point_data, cell_data=self.cell_data)
         mesh.write(self.p['fname'])
 
-    def extract_svFSI(self, displacement=None):
+    def extract_svFSI(self):
         # read volume mesh in vtk
         vol = read_geo(self.p['fname']).GetOutput()
 
@@ -270,11 +290,6 @@ class Mesh():
         for f in ['solid', 'fluid']:
             # select sub-mesh
             vol_f = threshold(vol, 1, 'ids_' + f).GetOutput()
-
-            # if f == 'fluid' and displacement is not None:
-            #     disp_vol = read_geo(displacement).GetOutput()
-            #     disp = v2n(disp_vol.GetPointDat().GetArray('Displacement'))
-            #     pdb.set_trace()
 
             # reset global ids
             n_array = n2v(np.arange(vol_f.GetNumberOfPoints()) + 1)
@@ -376,15 +391,13 @@ class Mesh():
 
 
 def generate_mesh(displacement=None):
-    mesh = Mesh()
+    f_params = 'cylinder.json'
+    mesh = Mesh(f_params)
     mesh.generate_points()
     mesh.generate_cells()
-    mesh.extract_svFSI(displacement)
+    mesh.extract_svFSI()
+    mesh.save_params()
 
-    # save parameters
-    file_name = os.path.join(mesh.p['f_out'], 'cylinder.json')
-    with open(file_name, 'w') as file:
-        json.dump(mesh.p, file, indent=4, sort_keys=True)
 
 if __name__ == '__main__':
     generate_mesh()
