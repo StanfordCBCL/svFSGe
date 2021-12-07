@@ -48,6 +48,14 @@ class FSG(Simulation):
         self.points_f = v2n(self.interface_f.GetPoints().GetData())
         self.points_s = v2n(self.interface_s.GetPoints().GetData())
 
+        # map fluid mesh to solid mesh
+        tree = scipy.spatial.KDTree(self.points_s)
+        _, self.i_fs = tree.query(self.points_f)
+
+        # map solid mesh to fluid mesh
+        tree = scipy.spatial.KDTree(self.points_f)
+        _, self.i_sf = tree.query(self.points_s)
+
     def run(self, mode):
         try:
             if mode == '1-way':
@@ -70,16 +78,21 @@ class FSG(Simulation):
         self.p['inp_fluid'] = 'steady_flow.inp'
         self.p['inp_solid'] = 'gr_restart.inp'
         self.p['inp_mesh'] = 'mesh.inp'
-        self.p['f_load'] = 'interface_pressure.vtp'
+        self.p['f_load_pressure'] = 'interface_pressure.vtp'
+        self.p['f_load_wss'] = 'interface_wss.vtp'
         self.p['f_disp'] = 'interface_displacement.vtp'
+
+        # maximum number of time steps in fluid and solid simulations
+        self.p['n_max_fluid'] = 10
+        self.p['n_max_solid'] = 10
 
         # homeostatic pressure
         self.p['p0'] = 13.9868
 
         # fluid flow
-        self.p['q0'] = 0.01
+        self.p['q0'] = 0.1
 
-        # maximum number of time steps
+        # maximum number of G&R time steps (excluding prestress)
         self.p['nmax'] = 100
 
         # maximum load factor
@@ -95,7 +108,7 @@ class FSG(Simulation):
 
             # step 1: steady-state fluid (analytical solution)
             self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
-            shutil.copyfile(self.p['f_load'], 'fluid/steady_' + str(i).zfill(3) + '.vtu')
+            shutil.copyfile(self.p['f_load_pressure'], 'fluid/steady_' + str(i).zfill(3) + '.vtu')
 
             # step 2: solid g&r
             self.step_gr()
@@ -151,9 +164,8 @@ class FSG(Simulation):
         array.SetName('Displacement')
         geo.GetPointData().AddArray(array)
 
-        t_end = 10
         os.makedirs('10-procs', exist_ok=True)
-        write_geo('10-procs/mesh_' + str(t_end).zfill(3) + '.vtu', geo)
+        write_geo('10-procs/mesh_' + str(self.p['n_max_solid']).zfill(3) + '.vtu', geo)
 
     def initialize_fluid(self, p, q, mode):
         if mode == 'vol':
@@ -193,7 +205,7 @@ class FSG(Simulation):
         if mode == 'vol':
             write_geo('fluid/mesh.vtu', geo)
         elif mode == 'interface':
-            write_geo(self.p['f_load'], geo)
+            write_geo(self.p['f_load_pressure'], geo)
         
     def set_pressure(self, p):
         with open('steady_pressure.dat', 'w') as f:
@@ -216,45 +228,51 @@ class FSG(Simulation):
     def step_mesh(self):
         subprocess.run(shlex.split('mpirun -np 10 ' + self.p['exe_fluid'] + ' ' + self.p['inp_mesh']))
 
-    def project_f2s(self, i, f=None, p0=None):
-        t_end = 10
-        shutil.copyfile('10-procs/steady_' + str(t_end).zfill(3) + '.vtu', 'fluid/steady_' + str(i).zfill(3) + '.vtu')
+    def project_f2s(self, i):
+        src = '10-procs/steady_' + str(self.p['n_max_fluid']).zfill(3) + '.vtu'
+        trg = 'fluid/steady_' + str(i).zfill(3) + '.vtu'
+        shutil.copyfile(src, trg)
 
         # read fluid pressure
-        res = read_geo('fluid/steady_' + str(i).zfill(3) + '.vtu').GetOutput()
-        pressure_f = v2n(res.GetPointData().GetArray('Pressure'))
+        res = read_geo(trg).GetOutput()
+        for n in ['Pressure', 'WSS']:
+            # read from fluid mesh
+            res_f = v2n(res.GetPointData().GetArray(n))
 
-        # map fluid pressure to solid mesh
-        tree = scipy.spatial.KDTree(self.points_s)
-        _, i_fs = tree.query(self.points_f)
-        pressure_s = pressure_f[self.nodes_f - 1][i_fs]
+            # map onto solid mesh
+            res_s = res_f[self.nodes_f - 1][self.i_fs]
 
-        # export to file
-        array = n2v(pressure_s)
-        array.SetName('Pressure')
-        self.interface_s.GetPointData().AddArray(array)
-        write_geo(self.p['f_load'], self.interface_s)
+            # create VTK array
+            array = n2v(res_s)
+            array.SetName(n)
+            self.interface_s.GetPointData().AddArray(array)
+
+            # write to file
+            write_geo(self.p['f_load_' + n.lower()], self.interface_s)
 
     def project_s2f(self, i):
         res = read_geo('1-procs/gr_' + str(i).zfill(3) + '.vtu').GetOutput()
 
-        displacement_s = v2n(res.GetPointData().GetArray('Displacement'))
+        # read from solid mesh
+        res_s = v2n(res.GetPointData().GetArray('Displacement'))
 
-        tree = scipy.spatial.KDTree(self.points_f)
-        _, i_sf = tree.query(self.points_s)
+        # map onto fluid mesh
+        res_f = res_s[self.nodes_s - 1][self.i_sf]
 
-        displacement_f = displacement_s[self.nodes_s - 1][i_sf]
-        array = n2v(displacement_f)
+        # create VTK array
+        array = n2v(res_f)
         array.SetName('Displacement')
         self.interface_f.GetPointData().AddArray(array)
+
+        # write to file
         write_geo(self.p['f_disp'], self.interface_f)
 
         # write general bc file
         with open('interface_displacement.dat', 'w') as f:
-            f.write('3 2 ' + str(len(displacement_f)) + '\n')
+            f.write('3 2 ' + str(len(res_f)) + '\n')
             f.write('0.0\n')
             f.write('1.0\n')
-            for n, d in zip(self.nodes_f, displacement_f):
+            for n, d in zip(self.nodes_f, res_f):
                 f.write(str(n) + '\n')
                 # for _ in range(2):
                 f.write('0.0 0.0 0.0\n')
@@ -263,9 +281,10 @@ class FSG(Simulation):
                 f.write('\n')
 
     def project_disp(self, i):
-        t_end = 10
-        shutil.copyfile('10-procs/mesh_' + str(t_end).zfill(3) + '.vtu', 'fluid/mesh_' + str(i).zfill(3) + '.vtu')
-        res = read_geo('fluid/mesh_' + str(i).zfill(3) + '.vtu').GetOutput()
+        src = '10-procs/mesh_' + str(self.p['n_max_solid']).zfill(3) + '.vtu'
+        trg = 'fluid/mesh_' + str(i).zfill(3) + '.vtu'
+        shutil.copyfile(src, trg)
+        res = read_geo(trg).GetOutput()
 
         res.GetPointData().SetActiveVectors('Displacement')
         warp = vtk.vtkWarpVector()
