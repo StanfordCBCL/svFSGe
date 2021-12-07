@@ -7,10 +7,13 @@ import sys
 import vtk
 import os
 import json
+import shutil
 
 from collections import defaultdict
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 from vtk.util.numpy_support import vtk_to_numpy as v2n
+
+from simulation import Simulation
 
 # from https://github.com/StanfordCBCL/DataCuration
 sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
@@ -29,20 +32,18 @@ coords = [[0, 1, 0],
         [1, 0, 0]]
 
 
-class Mesh():
+class Mesh(Simulation):
     def __init__(self, f_params=None):
         # mesh parameters
-        self.p = {}
+        Simulation.__init__(self, f_params)
 
-        # set mesh parameters (load from json file if given)
-        if f_params is None:
-            self.set_params()
-        else:
-            self.load_params(f_params)
-
-        # check parameters
-        assert self.p['n_cir'] // 2 == self.p['n_cir'] / 2, 'number of elements in cir direction must be divisible by two'
-        assert self.p['n_rad_tran'] >= self.p['n_cir'] // 2, 'choose number of transition elements at least half the number of cir elements'
+        # axial mesh function
+        self.f = {}
+        self.f['axi'] = lambda z: z
+        # self.f['axi'] = lambda z: np.sqrt(z)
+        # self.f['axi'] = lambda z: z**2
+        # self.f['axi'] = lambda z: np.log(z + 1) / np.log(2)
+        # self.f['axi'] = lambda z: np.exp(z ** 2) - 1
 
         # size of quadratic mesh
         self.p['n_quad'] = self.p['n_cir'] // 2 + 1
@@ -103,20 +104,9 @@ class Mesh():
         # number of circle segments (1 = full circle, 2 = half circle, ...)
         self.p['n_seg'] = 4
 
-    def load_params(self, file_name):
-        # read parameters from json file
-        with open(file_name, 'r') as file:
-            param = json.load(file)
-
-        # set parameters
-        for k, v in param.items():
-            self.p[k] = v
-
-    def save_params(self):
-        # save parameters to json file
-        file_name = os.path.join(self.p['f_out'], 'cylinder.json')
-        with open(file_name, 'w') as file:
-            json.dump(self.p, file, indent=4, sort_keys=True)
+    def validate_params(self):
+        assert self.p['n_cir'] // 2 == self.p['n_cir'] / 2, 'number of elements in cir direction must be divisible by two'
+        assert self.p['n_rad_tran'] >= self.p['n_cir'] // 2, 'choose number of transition elements at least half the number of cir elements'
 
     def get_surfaces_cyl(self, pid, ia, ir, ic):
         # store surfaces
@@ -157,7 +147,7 @@ class Mesh():
         for ia in range(self.p['n_axi'] + 1):
             for iy in range(self.p['n_quad']):
                 for ix in range(self.p['n_quad']):
-                    axi = self.p['height'] * ia / self.p['n_axi']
+                    axi = self.p['height'] * self.f['axi'](ia / self.p['n_axi'])
                     rad = self.p['r_inner'] / (self.p['n_rad_f'] - 1)
                     
                     self.points[pid] = [ix * rad, iy * rad, axi]
@@ -175,7 +165,7 @@ class Mesh():
                     rad_1 = self.p['r_inner']
 
                     # cylindrical coordinate system
-                    axi = self.p['height'] * ia / self.p['n_axi']
+                    axi = self.p['height'] * self.f['axi'](ia / self.p['n_axi'])
                     cir = 2 * np.pi * ic / self.p['n_cell_cir'] / self.p['n_seg']
                     rad = rad_0 + (rad_1 - rad_0) * i_rad
 
@@ -194,7 +184,7 @@ class Mesh():
             for ir in range(self.p['n_rad_gr'] + 1):
                 for ic in range(self.p['n_point_cir']):
                     # cylindrical coordinate system
-                    axi = self.p['height'] * ia / self.p['n_axi']
+                    axi = self.p['height'] * self.f['axi'](ia / self.p['n_axi'])
                     cir = 2 * np.pi * ic / self.p['n_cell_cir'] / self.p['n_seg']
                     rad = self.p['r_inner'] + (self.p['r_outer'] - self.p['r_inner']) * (ir) / self.p['n_rad_gr']
 
@@ -283,7 +273,10 @@ class Mesh():
 
     def extract_svFSI(self):
         # read volume mesh in vtk
-        vol = read_geo(self.p['fname']).GetOutput()
+        f_fsi = os.path.join(self.p['f_out'], self.p['fname'])
+        os.makedirs(self.p['f_out'], exist_ok=True)
+        shutil.move(self.p['fname'], f_fsi)
+        vol = read_geo(f_fsi).GetOutput()
 
         surf_ids = {}
         points_inlet = []
@@ -391,12 +384,12 @@ class Mesh():
 
 
 def generate_mesh(displacement=None):
-    f_params = 'cylinder.json'
+    f_params = 'in/fsg_coarse.json'
     mesh = Mesh(f_params)
     mesh.generate_points()
     mesh.generate_cells()
     mesh.extract_svFSI()
-    mesh.save_params()
+    mesh.save_params('cylinder.json')
 
 
 if __name__ == '__main__':

@@ -18,6 +18,7 @@ import json
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 
+from simulation import Simulation
 from cylinder import generate_mesh
 
 # from https://github.com/StanfordCBCL/DataCuration
@@ -26,30 +27,10 @@ sys.path.append('/Users/pfaller/work/repos/DataCuration')
 from vtk_functions import read_geo, write_geo
 
 
-class FSG():
-    def __init__(self):
-        self.p = {}
-
-        # define file paths
-        self.p['exe_fluid'] = '/home/pfaller/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'
-        self.p['exe_solid'] = '/home/pfaller/work/repos/svFSI_direct/build/svFSI-build/bin/svFSI'
-        self.p['inp_fluid'] = 'steady_flow.inp'
-        self.p['inp_solid'] = 'gr_restart.inp'
-        self.p['inp_mesh'] = 'mesh.inp'
-        self.p['f_load'] = 'interface_pressure.vtp'
-        self.p['f_disp'] = 'interface_displacement.vtp'
-
-        # homeostatic pressure
-        self.p['p0'] = 13.9868
-
-        # fluid flow
-        self.p['q0'] = 0.05
-
-        # maximum number of time steps
-        self.p['nmax'] = 10
-
-        # maximum load increase
-        self.p['fmax'] = 1.5
+class FSG(Simulation):
+    def __init__(self, f_params=None):
+        # simulation parameters
+        Simulation.__init__(self, f_params)
 
         # make folders
         os.makedirs('fluid', exist_ok=True)
@@ -67,6 +48,31 @@ class FSG():
         self.points_f = v2n(self.interface_f.GetPoints().GetData())
         self.points_s = v2n(self.interface_s.GetPoints().GetData())
 
+    def set_params(self):
+        # define file paths
+        self.p['exe_fluid'] = '/home/pfaller/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'
+        self.p['exe_solid'] = '/home/pfaller/work/repos/svFSI_direct/build/svFSI-build/bin/svFSI'
+        self.p['inp_fluid'] = 'steady_flow.inp'
+        self.p['inp_solid'] = 'gr_restart.inp'
+        self.p['inp_mesh'] = 'mesh.inp'
+        self.p['f_load'] = 'interface_pressure.vtp'
+        self.p['f_disp'] = 'interface_displacement.vtp'
+
+        # homeostatic pressure
+        self.p['p0'] = 13.9868
+
+        # fluid flow
+        self.p['q0'] = 0.01
+
+        # maximum number of time steps
+        self.p['nmax'] = 100
+
+        # maximum load factor
+        self.p['fmax'] = 1.0
+
+    def validate_params(self):
+        pass
+
     def main_one_way(self):
         for i in list(range(0, self.p['nmax'] + 1)):
             # calculate pressure load increase
@@ -83,6 +89,7 @@ class FSG():
         self.archive('1-way_res')
 
     def main_two_way(self):
+        # todo: j-1 for fluid, zfill for all file names
         for i in list(range(0, self.p['nmax'] + 1)):
             # current load
             f = 1.0 + np.max([i, 0]) / self.p['nmax'] * (self.p['fmax'] - 1.0)
@@ -110,15 +117,13 @@ class FSG():
         # archive results
         self.archive('2-way_res')
     
-    def initialize(self):
-        os.makedirs('fluid', exist_ok=True)
-    
     def archive(self, name):
         # time stamp
         ct = str(datetime.datetime.now()).replace(' ', '_').replace(':', '-')
 
         # folder name
         f_out = name + '_' + ct
+        self.p['f_out'] = f_out
 
         # move results
         shutil.move('1-procs', os.path.join(f_out, 'gr'))
@@ -126,12 +131,21 @@ class FSG():
         shutil.move('mesh_tube_fsi', os.path.join(f_out, 'mesh_tube_fsi'))
 
         # save parameters
-        file_name = os.path.join(f_out, 'fsg.json')
-        with open(file_name, 'w') as file:
-            json.dump(self.p, file, indent=4, sort_keys=True)
+        self.save_params('fsg.json')
 
     def initialize_mesh(self):
+        # initial fluid mesh (zero displacements)
         shutil.copyfile('mesh_tube_fsi/fluid/mesh-complete.mesh.vtu', 'fluid/mesh.vtu')
+
+        # initial zero mesh displacements
+        geo = read_geo('fluid/mesh.vtu').GetOutput()
+        array = n2v(np.zeros((geo.GetNumberOfPoints(), 3)))
+        array.SetName('Displacement')
+        geo.GetPointData().AddArray(array)
+
+        t_end = 10
+        os.makedirs('10-procs', exist_ok=True)
+        write_geo('10-procs/mesh_' + str(t_end).zfill(3) + '.vtu', geo)
 
     def initialize_fluid(self, p, q, mode):
         if mode == 'vol':
@@ -141,7 +155,7 @@ class FSG():
         arrays = {}
 
         # mesh points
-        points =  v2n(geo.GetPoints().GetData())
+        points = v2n(geo.GetPoints().GetData())
 
         # normalized axial coordinate
         ax = points[:, 2].copy()
@@ -195,7 +209,7 @@ class FSG():
         subprocess.run(shlex.split('mpirun -np 10 ' + self.p['exe_fluid'] + ' ' + self.p['inp_mesh']))
 
     def project_f2s(self, i, f=None, p0=None):
-        t_end = 30
+        t_end = 10
         shutil.copyfile('10-procs/steady_' + str(t_end).zfill(3) + '.vtu', 'fluid/steady_' + str(i) + '.vtu')
 
         # read fluid pressure
@@ -231,16 +245,17 @@ class FSG():
         with open('interface_displacement.dat', 'w') as f:
             f.write('3 2 ' + str(len(displacement_f)) + '\n')
             f.write('0.0\n')
-            f.write('100.0\n')
+            f.write('1.0\n')
             for n, d in zip(self.nodes_f, displacement_f):
                 f.write(str(n) + '\n')
-                for _ in range(2):
-                    for di in d:
-                        f.write(str(di) + ' ')
-                    f.write('\n')
+                # for _ in range(2):
+                f.write('0.0 0.0 0.0\n')
+                for di in d:
+                    f.write(str(di) + ' ')
+                f.write('\n')
 
     def project_disp(self, i):
-        t_end = 1
+        t_end = 10
         shutil.copyfile('10-procs/mesh_' + str(t_end).zfill(3) + '.vtu', 'fluid/mesh_' + str(i) + '.vtu')
         res = read_geo('fluid/mesh_' + str(i) + '.vtu').GetOutput()
 
@@ -253,5 +268,5 @@ class FSG():
 
 if __name__ == '__main__':
     fsg = FSG()
-    fsg.main_one_way()
-    # fsg.main_two_way()
+    # fsg.main_one_way()
+    fsg.main_two_way()
