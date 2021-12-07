@@ -48,6 +48,21 @@ class FSG(Simulation):
         self.points_f = v2n(self.interface_f.GetPoints().GetData())
         self.points_s = v2n(self.interface_s.GetPoints().GetData())
 
+    def run(self, mode):
+        try:
+            if mode == '1-way':
+                self.main_one_way()
+            elif mode == '2-way':
+                self.main_two_way()
+            else:
+                raise ValueError('Unknown mode ' + mode)
+        # in case anything fails, still proceed with archiving the results
+        except:
+            pass
+
+        # archive results
+        self.archive(mode + '_res')
+
     def set_params(self):
         # define file paths
         self.p['exe_fluid'] = '/home/pfaller/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'
@@ -80,16 +95,12 @@ class FSG(Simulation):
 
             # step 1: steady-state fluid (analytical solution)
             self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
-            shutil.copyfile(self.p['f_load'], 'fluid/steady_' + str(i) + '.vtu')
+            shutil.copyfile(self.p['f_load'], 'fluid/steady_' + str(i).zfill(3) + '.vtu')
 
             # step 2: solid g&r
             self.step_gr()
-        
-        # archive results
-        self.archive('1-way_res')
 
     def main_two_way(self):
-        # todo: j-1 for fluid, zfill for all file names
         for i in list(range(0, self.p['nmax'] + 1)):
             # current load
             f = 1.0 + np.max([i, 0]) / self.p['nmax'] * (self.p['fmax'] - 1.0)
@@ -104,7 +115,7 @@ class FSG(Simulation):
             # step 1: steady-state fluid
             self.set_flow(self.p['q0'])
             self.step_fluid()
-            self.project_f2s(j)
+            self.project_f2s(j - 1)
 
             # step 2: solid g&r
             self.step_gr()
@@ -113,9 +124,6 @@ class FSG(Simulation):
             # step 3: deform mesh
             self.step_mesh()
             self.project_disp(j)
-        
-        # archive results
-        self.archive('2-way_res')
     
     def archive(self, name):
         # time stamp
@@ -210,10 +218,10 @@ class FSG(Simulation):
 
     def project_f2s(self, i, f=None, p0=None):
         t_end = 10
-        shutil.copyfile('10-procs/steady_' + str(t_end).zfill(3) + '.vtu', 'fluid/steady_' + str(i) + '.vtu')
+        shutil.copyfile('10-procs/steady_' + str(t_end).zfill(3) + '.vtu', 'fluid/steady_' + str(i).zfill(3) + '.vtu')
 
         # read fluid pressure
-        res = read_geo('fluid/steady_' + str(i) + '.vtu').GetOutput()
+        res = read_geo('fluid/steady_' + str(i).zfill(3) + '.vtu').GetOutput()
         pressure_f = v2n(res.GetPointData().GetArray('Pressure'))
 
         # map fluid pressure to solid mesh
@@ -256,8 +264,8 @@ class FSG(Simulation):
 
     def project_disp(self, i):
         t_end = 10
-        shutil.copyfile('10-procs/mesh_' + str(t_end).zfill(3) + '.vtu', 'fluid/mesh_' + str(i) + '.vtu')
-        res = read_geo('fluid/mesh_' + str(i) + '.vtu').GetOutput()
+        shutil.copyfile('10-procs/mesh_' + str(t_end).zfill(3) + '.vtu', 'fluid/mesh_' + str(i).zfill(3) + '.vtu')
+        res = read_geo('fluid/mesh_' + str(i).zfill(3) + '.vtu').GetOutput()
 
         res.GetPointData().SetActiveVectors('Displacement')
         warp = vtk.vtkWarpVector()
@@ -268,5 +276,5 @@ class FSG(Simulation):
 
 if __name__ == '__main__':
     fsg = FSG()
-    # fsg.main_one_way()
-    fsg.main_two_way()
+    # fsg.run('1-way')
+    fsg.run('2-way')
