@@ -67,7 +67,7 @@ class Mesh(Simulation):
         # initialize arrays
         self.points = np.zeros((n_points, 3))
         self.cells = np.zeros((n_cells, 8))
-        self.cosy = np.zeros((n_points, 6))
+        self.cosy = np.zeros((n_points, 7))
         self.fiber_dict = defaultdict(lambda: np.zeros((n_points, 3)))
         self.vol_dict = defaultdict(list)
         self.surf_dict = defaultdict(list)
@@ -194,7 +194,8 @@ class Mesh(Simulation):
                     self.cosy[pid, 0] = rad # / r_outer
                     self.cosy[pid, 1] = ic / self.p['n_cell_cir'] / self.p['n_seg']
                     self.cosy[pid, 2] = ia / self.p['n_axi']
-                    self.cosy[pid, 3:] = self.points[pid, :]
+                    self.cosy[pid, 3:6] = self.points[pid, :]
+                    self.cosy[pid, 6] = 1337.0
         
                     # store fibers
                     self.fiber_dict['axi'][pid] = [0, 0, 1]

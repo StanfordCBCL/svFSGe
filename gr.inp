@@ -26,7 +26,7 @@ Debug: 0
 Add mesh: msh {
    Mesh file path:    mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
-   Number of variable wall properties: 6
+   Number of variable wall properties: 7
    Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Add face: start {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/start.vtp
