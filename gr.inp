@@ -15,7 +15,7 @@ Increment in saving restart files: 1
 
 Overwrite restart file: 0
 Restart file name: gr
-#Save results in folder: 1-procs
+Save results in folder: gr
 
 Verbose: 1
 Warning: 0

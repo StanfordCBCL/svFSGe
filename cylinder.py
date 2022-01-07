@@ -195,7 +195,8 @@ class Mesh(Simulation):
                     self.cosy[pid, 1] = ic / self.p['n_cell_cir'] / self.p['n_seg']
                     self.cosy[pid, 2] = ia / self.p['n_axi']
                     self.cosy[pid, 3:6] = self.points[pid, :]
-                    self.cosy[pid, 6] = 1337.0
+                    self.cosy[pid, 6] = 4 * 0.04 * 1.0 / np.pi / self.p['r_inner']**3
+                    # self.cosy[pid, 6] = 4 * 0.04 * 1.0 / np.pi / rad**3
         
                     # store fibers
                     self.fiber_dict['axi'][pid] = [0, 0, 1]
@@ -385,7 +386,7 @@ class Mesh(Simulation):
 
 
 def generate_mesh(displacement=None):
-    f_params = 'in/fsg_coarse.json'
+    f_params = 'in/ring_cmame.json'
     mesh = Mesh(f_params)
     mesh.generate_points()
     mesh.generate_cells()

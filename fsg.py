@@ -15,6 +15,8 @@ import os
 import vtk
 import json
 
+import scipy.interpolate
+
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 
@@ -24,7 +26,7 @@ from cylinder import generate_mesh
 # from https://github.com/StanfordCBCL/DataCuration
 sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
 sys.path.append('/Users/pfaller/work/repos/DataCuration')
-from vtk_functions import read_geo, write_geo
+from vtk_functions import read_geo, write_geo, calculator, extract_surface, clean, threshold, get_all_arrays
 
 
 class FSG(Simulation):
@@ -33,12 +35,13 @@ class FSG(Simulation):
         Simulation.__init__(self, f_params)
 
         # make folders
-        os.makedirs('fluid', exist_ok=True)
+        os.makedirs('fsg', exist_ok=True)
 
         # generate and initialize mesh
         generate_mesh()
         self.initialize_mesh()
 
+        # intialize fluid/solid interface meshes
         self.interface_f = read_geo('mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp').GetOutput()
         self.interface_s = read_geo('mesh_tube_fsi/solid/mesh-surfaces/interface.vtp').GetOutput()
 
@@ -65,8 +68,8 @@ class FSG(Simulation):
             else:
                 raise ValueError('Unknown mode ' + mode)
         # in case anything fails, still proceed with archiving the results
-        except:
-            pass
+        except Exception as e:
+            print(e)
 
         # archive results
         self.archive(mode + '_res')
@@ -82,21 +85,31 @@ class FSG(Simulation):
         self.p['f_load_wss'] = 'interface_wss.vtp'
         self.p['f_disp'] = 'interface_displacement.vtp'
 
+        # number of processors
+        self.p['n_procs_fluid'] = 10
+        self.p['n_procs_mesh'] = 10
+
         # maximum number of time steps in fluid and solid simulations
-        self.p['n_max_fluid'] = 10
-        self.p['n_max_solid'] = 10
+        self.p['n_max_fluid'] = 30
+        self.p['n_max_mesh'] = 10
 
         # homeostatic pressure
         self.p['p0'] = 13.9868
 
         # fluid flow
-        self.p['q0'] = 0.1
+        self.p['q0'] = 0.0
+
+        # maximum number of coupling iterations
+        self.p['imax'] = 50
+
+        # relaxation constant
+        self.p['omega'] = 0.5
 
         # maximum number of G&R time steps (excluding prestress)
-        self.p['nmax'] = 100
+        self.p['nmax'] = 20
 
         # maximum load factor
-        self.p['fmax'] = 1.0
+        self.p['fmax'] = 1.5
 
     def validate_params(self):
         pass
@@ -106,12 +119,29 @@ class FSG(Simulation):
             # calculate pressure load increase
             fp = 1.0 + np.max([i, 0]) / self.p['nmax'] * (self.p['fmax'] - 1.0)
 
+            print('t ' + str(i) + '\tfp ' + str(fp))
+
             # step 1: steady-state fluid (analytical solution)
             self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
-            shutil.copyfile(self.p['f_load_pressure'], 'fluid/steady_' + str(i).zfill(3) + '.vtu')
 
             # step 2: solid g&r
-            self.step_gr()
+            for j in range(self.p['imax']):
+                k = i * self.p['imax'] + j
+                self.step_gr()
+                if i == 0 and j == 0:
+                    i_res = [-1, k + 1]
+                else:
+                    # i_res = [(i - 1) * self.p['imax'] + j + 1, k + 1]
+                    i_res = [k, k + 1]
+                res = self.initialize_wss(i_res)
+                print('  j\t' + str(j) + '\t' + '{:.2e}'.format(res))
+
+            # copy files for logging
+            src = '1-procs/gr_' + str((i + 1) * self.p['imax']).zfill(3) + '.vtu'
+            trg = 'fsg/gr_' + str(i).zfill(3) + '.vtu'
+            shutil.copyfile(src, trg)
+            shutil.copyfile(self.p['f_load_pressure'], 'fsg/steady_' + str(i).zfill(3) + '.vtp')
+            shutil.copyfile('fsg/solid.vtu', 'fsg/solid_' + str(i).zfill(3) + '.vtu')
 
     def main_two_way(self):
         for i in list(range(0, self.p['nmax'] + 1)):
@@ -129,6 +159,7 @@ class FSG(Simulation):
             self.set_flow(self.p['q0'])
             self.step_fluid()
             self.project_f2s(j - 1)
+            self.post_wss(j - 1)
 
             # step 2: solid g&r
             self.step_gr()
@@ -148,7 +179,7 @@ class FSG(Simulation):
 
         # move results
         shutil.move('1-procs', os.path.join(f_out, 'gr'))
-        shutil.move('fluid', os.path.join(f_out, 'fluid'))
+        shutil.move('fsg', os.path.join(f_out, 'fsg'))
         shutil.move('mesh_tube_fsi', os.path.join(f_out, 'mesh_tube_fsi'))
 
         # save parameters
@@ -156,20 +187,21 @@ class FSG(Simulation):
 
     def initialize_mesh(self):
         # initial fluid mesh (zero displacements)
-        shutil.copyfile('mesh_tube_fsi/fluid/mesh-complete.mesh.vtu', 'fluid/mesh.vtu')
+        for f in ['fluid', 'solid']:
+            shutil.copyfile('mesh_tube_fsi/' + f + '/mesh-complete.mesh.vtu', 'fsg/' + f + '.vtu')
 
         # initial zero mesh displacements
-        geo = read_geo('fluid/mesh.vtu').GetOutput()
+        geo = read_geo('fsg/fluid.vtu').GetOutput()
         array = n2v(np.zeros((geo.GetNumberOfPoints(), 3)))
         array.SetName('Displacement')
         geo.GetPointData().AddArray(array)
 
-        os.makedirs('10-procs', exist_ok=True)
-        write_geo('10-procs/mesh_' + str(self.p['n_max_solid']).zfill(3) + '.vtu', geo)
+        os.makedirs(str(self.p['n_procs_mesh']) + '-procs', exist_ok=True)
+        write_geo(str(self.p['n_procs_mesh']) + '-procs/mesh_' + str(self.p['n_max_mesh']).zfill(3) + '.vtu', geo)
 
     def initialize_fluid(self, p, q, mode):
         if mode == 'vol':
-            geo = read_geo('fluid/mesh.vtu').GetOutput()
+            geo = read_geo('fsg/fluid.vtu').GetOutput()
         elif mode == 'interface':
             geo = self.interface_s
         arrays = {}
@@ -203,10 +235,57 @@ class FSG(Simulation):
 
         # write to file
         if mode == 'vol':
-            write_geo('fluid/mesh.vtu', geo)
+            write_geo('fsg/fluid.vtu', geo)
         elif mode == 'interface':
             write_geo(self.p['f_load_pressure'], geo)
-        
+
+    def initialize_wss(self, i_res):
+        # read solid mesh
+        geo = read_geo('mesh_tube_fsi/solid/mesh-complete.mesh.vtu').GetOutput()
+        arrays, _ = get_all_arrays(geo)
+
+        # read results
+        disp_list = []
+        for j in i_res:
+            if j < 0:
+                disp_list += [np.zeros((geo.GetNumberOfPoints(), 3))]
+            else:
+                fname = '1-procs/gr_' + str(j).zfill(3) + '.vtu'
+                res = read_geo(fname).GetOutput()
+                disp_list += [v2n(res.GetPointData().GetArray('Displacement'))]
+
+        # relax displacement increment
+        disp = n2v((1.0 - self.p['omega']) * disp_list[0] + self.p['omega'] * disp_list[1])
+        disp.SetName('Displacement')
+        res.GetPointData().AddArray(disp)
+
+        # warp mesh by displacements
+        res.GetPointData().SetActiveVectors('Displacement')
+        warp = vtk.vtkWarpVector()
+        warp.SetInputData(res)
+        warp.Update()
+        res = warp.GetOutput()
+
+        # mesh points
+        points = v2n(res.GetPoints().GetData())
+
+        # radial coordinate
+        rad = np.sqrt(points[:, 0]**2 + points[:, 1]**2)
+
+        # wss (assume Q = 1.0 = const)
+        arrays['varWallProps'][:, 6] = 4 * 0.04 * 1.0 / np.pi / np.min(rad)**3
+        # arrays['varWallProps'][:, 6] = 4 * 0.04 * 1.0 / np.pi / rad**3
+
+        # create VTK array
+        array = n2v(arrays['varWallProps'])
+        array.SetName('varWallProps')
+        geo.GetPointData().AddArray(array)
+
+        # write to file
+        write_geo('fsg/solid.vtu', geo)
+
+        return np.linalg.norm(disp_list[1] - disp_list[0])
+
     def set_pressure(self, p):
         with open('steady_pressure.dat', 'w') as f:
             f.write('2 1\n')
@@ -220,22 +299,23 @@ class FSG(Simulation):
             f.write('100.0 ' + str(-q) + '\n')
 
     def step_fluid(self):
-        subprocess.run(shlex.split('mpirun -np 10 ' + self.p['exe_fluid'] + ' ' + self.p['inp_fluid']))
+        subprocess.run(shlex.split('mpirun -np ' + str(self.p['n_procs_fluid']) + ' ' + self.p['exe_fluid'] + ' ' + self.p['inp_fluid']))
 
     def step_gr(self):
-        subprocess.run(shlex.split(self.p['exe_solid'] + ' ' + self.p['inp_solid']))
+        subprocess.run(shlex.split(self.p['exe_solid'] + ' ' + self.p['inp_solid']),
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def step_mesh(self):
-        subprocess.run(shlex.split('mpirun -np 10 ' + self.p['exe_fluid'] + ' ' + self.p['inp_mesh']))
+        subprocess.run(shlex.split('mpirun -np ' + str(self.p['n_procs_mesh']) + ' ' + self.p['exe_fluid'] + ' ' + self.p['inp_mesh']))
 
     def project_f2s(self, i):
-        src = '10-procs/steady_' + str(self.p['n_max_fluid']).zfill(3) + '.vtu'
-        trg = 'fluid/steady_' + str(i).zfill(3) + '.vtu'
+        src = str(self.p['n_procs_fluid']) + '-procs/steady_' + str(self.p['n_max_fluid']).zfill(3) + '.vtu'
+        trg = 'fsg/steady_' + str(i).zfill(3) + '.vtu'
         shutil.copyfile(src, trg)
 
         # read fluid pressure
         res = read_geo(trg).GetOutput()
-        for n in ['Pressure', 'WSS']:
+        for n in ['Pressure']: #, 'WSS'
             # read from fluid mesh
             res_f = v2n(res.GetPointData().GetArray(n))
 
@@ -251,9 +331,8 @@ class FSG(Simulation):
             write_geo(self.p['f_load_' + n.lower()], self.interface_s)
 
     def project_s2f(self, i):
-        res = read_geo('1-procs/gr_' + str(i).zfill(3) + '.vtu').GetOutput()
-
         # read from solid mesh
+        res = read_geo('1-procs/gr_' + str(i).zfill(3) + '.vtu').GetOutput()
         res_s = v2n(res.GetPointData().GetArray('Displacement'))
 
         # map onto fluid mesh
@@ -281,19 +360,68 @@ class FSG(Simulation):
                 f.write('\n')
 
     def project_disp(self, i):
-        src = '10-procs/mesh_' + str(self.p['n_max_solid']).zfill(3) + '.vtu'
-        trg = 'fluid/mesh_' + str(i).zfill(3) + '.vtu'
+        src = str(self.p['n_procs_mesh']) + '-procs/mesh_' + str(self.p['n_max_mesh']).zfill(3) + '.vtu'
+        trg = 'fsg/mesh_' + str(i).zfill(3) + '.vtu'
         shutil.copyfile(src, trg)
-        res = read_geo(trg).GetOutput()
 
+        # warp mesh by displacements
+        res = read_geo(trg).GetOutput()
         res.GetPointData().SetActiveVectors('Displacement')
         warp = vtk.vtkWarpVector()
         warp.SetInputData(res)
         warp.Update()
-        write_geo('fluid/mesh.vtu', warp.GetOutput())
+        write_geo('fsg/fluid.vtu', warp.GetOutput())
+
+    def post_wss(self, i):
+        # read solid mesh
+        solid = read_geo('mesh_tube_fsi/solid/mesh-complete.mesh.vtu').GetOutput()
+
+        # read fluid pressure
+        trg = 'fsg/steady_' + str(i).zfill(3) + '.vtu'
+        res = read_geo(trg)
+
+        # calculate WSS
+        calc1 = calculator(res, 'mag(Velocity)', ['Velocity'], 'u')
+        grad = vtk.vtkGradientFilter()
+        grad.SetInputData(calc1.GetOutput())
+        grad.SetInputScalars(0, 'u')
+        grad.Update()
+        surf = extract_surface(grad.GetOutput())
+        norm = vtk.vtkPolyDataNormals()
+        norm.SetInputData(surf)
+        norm.Update()
+        calc2 = calculator(norm, '0.04*abs(Gradients.Normals)', ['Gradients', 'Normals'], 'WSS')
+        p2c = vtk.vtkPointDataToCellData()
+        p2c.SetInputData(calc2.GetOutput())
+        p2c.Update()
+        cl = clean(p2c.GetOutput())
+        thr = threshold(cl, 0.0, 'u')
+        c2p = vtk.vtkCellDataToPointData()
+        c2p.SetInputData(thr.GetOutput())
+        c2p.Update()
+        wss_f = v2n(c2p.GetOutput().GetPointData().GetArray('WSS'))
+
+        # get wall properties
+        props = v2n(solid.GetPointData().GetArray('varWallProps'))
+
+        # map fluid mesh to solid mesh
+        tree = scipy.spatial.KDTree(v2n(c2p.GetOutput().GetPoints().GetData()))
+        _, i_ws = tree.query(self.points_s)
+        wss_is = wss_f[i_ws]
+
+        # write wss to solid mesh
+        props[:, 6] = scipy.interpolate.griddata(props[self.nodes_s - 1][:, 1:3], wss_is, (props[:, 1], props[:, 2]))
+
+        # create VTK array
+        array = n2v(props)
+        array.SetName('varWallProps')
+        solid.GetPointData().AddArray(array)
+
+        write_geo('fsg/wss_' + str(i).zfill(3) + '.vtu', solid)
+        write_geo('fsg/solid.vtu', solid)
 
 
 if __name__ == '__main__':
     fsg = FSG()
-    # fsg.run('1-way')
-    fsg.run('2-way')
+    fsg.run('1-way')
+    # fsg.run('2-way')
