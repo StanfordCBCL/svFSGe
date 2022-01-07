@@ -1,0 +1,130 @@
+#----------------------------------------------------------------
+# General simulation parameters
+
+Continue previous simulation: 1
+Number of spatial dimensions: 3
+Number of time steps: 1
+Time step size: 1.0
+
+Save results to VTK format: 1
+Name prefix of saved VTK files: gr
+Increment in saving VTK files: 1
+Start saving after time step: 1
+
+Increment in saving restart files: 1
+
+Overwrite restart file: 0
+Restart file name: gr
+Save results in folder: 1-procs
+
+Verbose: 1
+Warning: 0
+Debug: 0
+
+#----------------------------------------------------------------
+# Mesh data
+Add mesh: msh {
+   Mesh file path:    mesh_tube_fsi/solid/mesh-complete.mesh.vtu
+   Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
+   Number of variable wall properties: 7
+   Variable wall properties file path: fsg/solid.vtu
+   Add face: start {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/start.vtp
+   }
+   Add face: end {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/end.vtp
+   }
+   Add face: inside {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/interface.vtp
+   }
+   Add face: outside {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/outside.vtp
+   }
+   Add face: x_zero {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/x_zero.vtp
+   }
+   Add face: y_zero {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/y_zero.vtp
+   }
+   Mesh scale factor: 1.0
+}
+
+#----------------------------------------------------------------
+# Equations
+Add equation: struct {
+   Coupled: 1
+   Min iterations: 1
+   Max iterations: 10
+   Tolerance: 1e-10
+
+   Constitutive model: GR_Equilibrated
+   Density: 0.0
+   Elasticity modulus: 1.0e-16
+   Poisson ratio: 0.0
+
+#   Constitutive model: stVK
+#   Density: 0.0
+#   Elasticity modulus: 1000.0
+#   Poisson ratio: 0.4
+
+   Output: Spatial {
+      Displacement: t
+      Velocity: t
+      Jacobian: t
+      Stress: t
+      Strain: t
+      Cauchy_stress: t
+      VonMises_stress: t
+      Acceleration: t
+      Fiber_direction: t
+   }
+
+   LS type: GMRES
+   {
+      Tolerance:           1e-9
+      Absolute tolerance:   1e-9
+      Max iterations:      300
+      Krylov space dimension: 300
+#      Preconditioner:  Trilinos-GR
+   }
+
+   # plane strain
+   Add BC: start {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 0, 1)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+   Add BC: end {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 0, 1)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+
+   # symmetry
+   Add BC: x_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (1, 0, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+   Add BC: y_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 1, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+
+   # fluid pressure
+   Add BC: inside {
+      Type: Neu
+      Time dependence: Spatial
+      Spatial values file path: interface_pressure.vtp
+      Follower pressure load: t
+   }
+}
