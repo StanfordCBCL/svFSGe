@@ -8,6 +8,14 @@ import vtk
 import os
 import json
 import shutil
+import platform
+
+if platform.system() == 'Darwin':
+    usr = '/Users/pfaller/'
+    sys.path.append('/Users/pfaller/work/repos/DataCuration')
+else:
+    usr = '/home/pfaller'
+    sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
 
 from collections import defaultdict
 from vtk.util.numpy_support import numpy_to_vtk as n2v
@@ -16,8 +24,6 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 from simulation import Simulation
 
 # from https://github.com/StanfordCBCL/DataCuration
-sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
-sys.path.append('/Users/pfaller/work/repos/DataCuration')
 from vtk_functions import read_geo, write_geo, get_points_cells, extract_surface, threshold
 from simulation_io import map_meshes
 

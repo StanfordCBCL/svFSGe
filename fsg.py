@@ -14,6 +14,14 @@ import datetime
 import os
 import vtk
 import json
+import platform
+
+if platform.system() == 'Darwin':
+    usr = '/Users/pfaller/'
+    sys.path.append('/Users/pfaller/work/repos/DataCuration')
+else:
+    usr = '/home/pfaller'
+    sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
 
 import scipy.interpolate
 
@@ -24,8 +32,6 @@ from simulation import Simulation
 from cylinder import generate_mesh
 
 # from https://github.com/StanfordCBCL/DataCuration
-sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
-sys.path.append('/Users/pfaller/work/repos/DataCuration')
 from vtk_functions import read_geo, write_geo, calculator, extract_surface, clean, threshold, get_all_arrays
 
 
@@ -76,8 +82,8 @@ class FSG(Simulation):
 
     def set_params(self):
         # define file paths
-        self.p['exe_fluid'] = '/home/pfaller/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'
-        self.p['exe_solid'] = '/home/pfaller/work/repos/svFSI_direct/build/svFSI-build/bin/svFSI'
+        self.p['exe_fluid'] = usr + '/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'
+        self.p['exe_solid'] = usr + '/work/repos/svFSI_direct/build/svFSI-build/bin/svFSI'
         self.p['inp_fluid'] = 'steady_flow.inp'
         self.p['inp_solid'] = 'gr_restart.inp'
         self.p['inp_mesh'] = 'mesh.inp'
