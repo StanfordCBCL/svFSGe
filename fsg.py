@@ -66,6 +66,7 @@ class FSG(Simulation):
         _, self.i_sf = tree.query(self.points_s)
 
     def run(self, mode):
+        # self.main_one_way()
         try:
             if mode == '1-way':
                 self.main_one_way()
@@ -105,14 +106,17 @@ class FSG(Simulation):
         # fluid flow
         self.p['q0'] = 0.0
 
+        # coupling tolerance
+        self.p['coup_tol'] = 1.0e-4
+
         # maximum number of coupling iterations
-        self.p['imax'] = 50
+        self.p['coup_imax'] = 10
 
         # relaxation constant
-        self.p['omega'] = 0.5
+        self.p['coup_omega'] = 1.0
 
         # maximum number of G&R time steps (excluding prestress)
-        self.p['nmax'] = 20
+        self.p['nmax'] = 10
 
         # maximum load factor
         self.p['fmax'] = 1.5
@@ -121,33 +125,61 @@ class FSG(Simulation):
         pass
 
     def main_one_way(self):
-        for i in list(range(0, self.p['nmax'] + 1)):
-            # calculate pressure load increase
-            fp = 1.0 + np.max([i, 0]) / self.p['nmax'] * (self.p['fmax'] - 1.0)
+        iter = 0
+        load = 0
+        res_vec = []
+        p_vec = np.linspace(1.0, self.p['fmax'], self.p['nmax'] + 1)
 
-            print('t ' + str(i) + '\tfp ' + str(fp))
+        # print('\titer\tfp\t\tres')
+        # for i in list(range(self.p['nmax'] + 1)):
+        #     print('t ' + str(i) + ' ' + '=' * 40)
 
-            # step 1: steady-state fluid (analytical solution)
+        # increment load step (pressure)
+        self.initialize_fluid(self.p['p0'], self.p['q0'], 'interface')
+
+        fp = 1.0
+        # for j in range(self.p['coup_imax']):
+        for i in range(999):
+            iter += 1
+            str_iter = str(iter).zfill(3)
+            
+            # pick time steps for fluid evaluation
+            if i == 0:
+                i_res = [-1, iter]
+            else:
+                i_res = [iter - 1, iter]
+                # i_res = [-1, iter]
+
+            # solid update
+            self.step_gr()
+            
+            # fluid update
+            res = self.initialize_wss(i_res)
+            res_vec += [res]
+
+            # increment load step (pressure)
             self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
 
-            # step 2: solid g&r
-            for j in range(self.p['imax']):
-                k = i * self.p['imax'] + j
-                self.step_gr()
-                if i == 0 and j == 0:
-                    i_res = [-1, k + 1]
-                else:
-                    # i_res = [(i - 1) * self.p['imax'] + j + 1, k + 1]
-                    i_res = [k, k + 1]
-                res = self.initialize_wss(i_res)
-                print('  j\t' + str(j) + '\t' + '{:.2e}'.format(res))
+            print('\t' + str(i) + '\t' + '{:.3e}'.format(fp) + '\t' + '{:.2e}'.format(res))
 
-            # copy files for logging
-            src = '1-procs/gr_' + str((i + 1) * self.p['imax']).zfill(3) + '.vtu'
-            trg = 'fsg/gr_' + str(i).zfill(3) + '.vtu'
-            shutil.copyfile(src, trg)
-            shutil.copyfile(self.p['f_load_pressure'], 'fsg/steady_' + str(i).zfill(3) + '.vtp')
-            shutil.copyfile('fsg/solid.vtu', 'fsg/solid_' + str(i).zfill(3) + '.vtu')
+            # logging
+            shutil.copyfile('fsg/solid.vtu', 'fsg/solid_' + str_iter + '.vtu')
+
+            # check if coupling converged
+            # if res < self.p['coup_tol'] or i == 0:
+                # fp += self.p['coup_omega'] * (self.p['fmax'] - fp)
+            if i > 0 and iter % self.p['coup_imax'] == 0:
+                load += 1
+                fp = p_vec[load]
+                print('fp ' + '=' * 40)
+            if iter == self.p['nmax'] * self.p['coup_imax']:
+                break
+
+        # copy files for logging
+        src = '1-procs/gr_' + str_iter + '.vtu'
+        trg = 'fsg/gr_' + str_iter + '.vtu'
+        shutil.copyfile(src, trg)
+        shutil.copyfile(self.p['f_load_pressure'], 'fsg/steady_' + str_iter + '.vtp')
 
     def main_two_way(self):
         for i in list(range(0, self.p['nmax'] + 1)):
@@ -261,7 +293,8 @@ class FSG(Simulation):
                 disp_list += [v2n(res.GetPointData().GetArray('Displacement'))]
 
         # relax displacement increment
-        disp = n2v((1.0 - self.p['omega']) * disp_list[0] + self.p['omega'] * disp_list[1])
+        # disp = n2v((1.0 - self.p['coup_omega']) * disp_list[0] + self.p['coup_omega'] * disp_list[1])
+        disp = n2v(disp_list[1])
         disp.SetName('Displacement')
         res.GetPointData().AddArray(disp)
 
