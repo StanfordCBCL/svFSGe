@@ -36,8 +36,10 @@ from cylinder import generate_mesh
 # from https://github.com/StanfordCBCL/DataCuration
 from vtk_functions import read_geo, write_geo, calculator, extract_surface, clean, threshold, get_all_arrays
 
-
-class FSG(Simulation):
+class svFSI(Simulation):
+    """
+    svFSI base class (handles simulation runs)
+    """
     def __init__(self, mode, f_params=None):
         # simulation parameters
         Simulation.__init__(self, f_params)
@@ -87,6 +89,40 @@ class FSG(Simulation):
         self.wss = [[]]
         self.rad = [[]]
 
+    def validate_params(self):
+        pass
+
+    def set_pressure(self, p):
+        with open('steady_pressure.dat', 'w') as f:
+            f.write('2 1\n')
+            f.write('0.0 ' + str(p) + '\n')
+            f.write('100.0 ' + str(p) + '\n')
+
+    def set_flow(self, q):
+        with open('steady_flow.dat', 'w') as f:
+            f.write('2 1\n')
+            f.write('0.0 ' + str(-q) + '\n')
+            f.write('100.0 ' + str(-q) + '\n')
+
+    def step_fluid(self):
+        subprocess.run(shlex.split('mpirun -np ' + str(self.p['n_procs_fluid']) + ' ' + self.p['exe_fluid'] + ' ' + self.p['inp_fluid']))
+
+    def step_gr(self):
+        subprocess.run(shlex.split(self.p['exe_solid'] + ' ' + self.p['inp_solid']),
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def step_mesh(self):
+        subprocess.run(shlex.split('mpirun -np ' + str(self.p['n_procs_mesh']) + ' ' + self.p['exe_fluid'] + ' ' + self.p['inp_mesh']))
+
+
+class FSG(svFSI):
+    """
+    FSG-specific stuff
+    """
+    def __init__(self, mode, f_params=None):
+        # svFSI simulations
+        svFSI.__init__(self, mode, f_params)
+
     def run(self):
         self.main_one_way()
         sys.exit(0)
@@ -130,22 +166,19 @@ class FSG(Simulation):
         self.p['q0'] = 0.0
 
         # coupling tolerance
-        self.p['coup_tol'] = 1.0e-3
+        self.p['coup_tol'] = 1.0e-4
 
         # maximum number of coupling iterations
         self.p['coup_imax'] = 100
 
         # relaxation constant
-        self.p['coup_damp'] = 15/16
+        self.p['coup_damp'] = 0.5
 
         # maximum number of G&R time steps (excluding prestress)
         self.p['nmax'] = 10
 
         # maximum load factor
         self.p['fmax'] = 1.5
-
-    def validate_params(self):
-        pass
 
     def main_one_way(self):
         # generate load vector
@@ -182,7 +215,7 @@ class FSG(Simulation):
                 self.step_gr()
 
                 # wss update
-                res = self.initialize_wss(i, n==0)
+                rad_err, wss_err = self.initialize_wss(i, n==0)
 
                 # logging
                 str_i = str(i).zfill(3)
@@ -194,32 +227,33 @@ class FSG(Simulation):
                        'fsg/steady_' + str_i + '.vtp']
                 for sr, tg in zip(src, trg):
                     shutil.copyfile(sr, os.path.join(self.p['f_out'], tg))
-                print('i ' + str(i) + ' \tn ' + str(n) + '\terr ' + '{:.2e}'.format(res))
+
+                # screen output
+                out = 'i ' + str(i) + ' \tn ' + str(n)
+                out += '\trad ' + '{:.2e}'.format(rad_err)
+                out += '\twss ' + '{:.2e}'.format(wss_err)
+                print(out)
 
                 # check if coupling converged
-                if res < self.p['coup_tol']:
+                if rad_err < self.p['coup_tol'] and wss_err < self.p['coup_tol']:
                     break
             else:
                 print('\tcoupling unconverged')
 
-        self.plot_wss(load_vec)
+        self.plot_wss()
 
-    def plot_wss(self, load_vec):
-        fig, ax = plt.subplots(1, 2 , figsize=(20, 10), dpi=300)
-
+    def plot_wss(self):
         labels = ['wss', 'rad']
         data = [self.wss, self.rad]
 
+        fig, ax = plt.subplots(1, 2 , figsize=(20, 10), dpi=300)
         for i, (d, l) in enumerate(zip(data, labels)):
-            ax[i].set_xlabel('sub-iterations $n$')
+            ax[i].set_xlabel('sub-iteration $n$')
             ax[i].xaxis.set_major_locator(MaxNLocator(integer=True))
             ax[i].set_ylabel(l)
             for j in d:
                 ax[i].plot(j, linestyle='-', marker='o')
-
-        # fig.tight_layout()
         plt.show()
-
 
     def main_two_way(self):
         for i in list(range(0, self.p['nmax'] + 1)):
@@ -312,18 +346,18 @@ class FSG(Simulation):
         elif mode == 'interface':
             write_geo(self.p['f_load_pressure'], geo)
 
-    def initialize_wss(self, i_res, ini):
+    def initialize_wss(self, i, ini):
         # read solid mesh
         geo = read_geo('mesh_tube_fsi/solid/mesh-complete.mesh.vtu').GetOutput()
         arrays, _ = get_all_arrays(geo)
 
         # read results
-        if i_res == 0:
+        if i == 0:
             # get reference configuration
             points = v2n(geo.GetPoints().GetData())
         else:
             # get displacement from g&r solution
-            fname = '1-procs/gr_' + str(i_res).zfill(3) + '.vtu'
+            fname = '1-procs/gr_' + str(i).zfill(3) + '.vtu'
             res = read_geo(fname).GetOutput()
 
             # warp mesh by displacements
@@ -336,33 +370,16 @@ class FSG(Simulation):
             points = v2n(warp.GetOutput().GetPoints().GetData())
 
         # get radial coordinate
-        rad_new = np.sqrt(points[:, 0]**2 + points[:, 1]**2)
+        rad_new = np.min(np.sqrt(points[:, 0]**2 + points[:, 1]**2))
+
+        # relax geometry update
+        rad_relax, rad_err = self.coup_relax(self.rad, rad_new, i, ini)
 
         # wss (assume Q = 1.0 = const)
-        wss_new = 4 * 0.04 * 1.0 / np.pi / np.min(rad)**3
+        wss_new = 4 * 0.04 * 1.0 / np.pi / np.min(rad_relax)**3
 
-        if i_res == 0:
-            # prestress: initialzie wss from reference configuration
-            wss_relax = wss_new
-        else:
-            # if ini: converged wss of last load step. else: wss of last sub-iteration
-            wss_old = self.wss[-1][-1]
-            if ini and len(self.wss) > 2:
-                # linearly extrapolate new wss from previous load increment
-                wss_old_old = self.wss[-2][-1]
-                wss_relax = 2.0 * wss_old - wss_old_old
-            else:
-                # damp with wss from previous iteration
-                wss_relax = (1.0 - self.p['coup_damp']) * wss_new + self.p['coup_damp'] * wss_old
-
-            # start a new sub-list for new load step
-            if ini:
-                self.wss.append([])
-                self.rad.append([])
-
-        # append current (damped) wss
-        self.wss[-1].append(wss_relax)
-        self.rad[-1].append(np.min(rad))
+        # relax wss update
+        wss_relax, wss_err = self.coup_relax(self.wss, wss_new, i, ini)
 
         # store wss in geometry
         arrays['varWallProps'][:, 6] = wss_relax
@@ -376,32 +393,34 @@ class FSG(Simulation):
         write_geo('fsg/solid.vtu', geo)
 
         # calculate wss norm
-        return abs(wss_relax / wss_new - 1.0)
+        return rad_err, wss_err
 
-    def coup_relax(self):
-        pass
+    def coup_relax(self, vec, vec_new, i, ini):
+        if i == 0:
+            # prestress: initialzie vec from reference configuration
+            vec_relax = vec_new
+        else:
+            # if ini: converged vec of last load step. else: vec of last sub-iteration
+            vec_old = vec[-1][-1]
+            if ini and len(vec) > 2:
+                # linearly extrapolate new vec from previous load increment
+                vec_old_old = vec[-2][-1]
+                vec_relax = 2.0 * vec_old - vec_old_old
+            else:
+                # damp with vec from previous iteration
+                vec_relax = (1.0 - self.p['coup_damp']) * vec_new + self.p['coup_damp'] * vec_old
 
-    def set_pressure(self, p):
-        with open('steady_pressure.dat', 'w') as f:
-            f.write('2 1\n')
-            f.write('0.0 ' + str(p) + '\n')
-            f.write('100.0 ' + str(p) + '\n')
-        
-    def set_flow(self, q):
-        with open('steady_flow.dat', 'w') as f:
-            f.write('2 1\n')
-            f.write('0.0 ' + str(-q) + '\n')
-            f.write('100.0 ' + str(-q) + '\n')
+            # start a new sub-list for new load step
+            if ini:
+                vec.append([])
 
-    def step_fluid(self):
-        subprocess.run(shlex.split('mpirun -np ' + str(self.p['n_procs_fluid']) + ' ' + self.p['exe_fluid'] + ' ' + self.p['inp_fluid']))
+        # append current (damped) vec
+        vec[-1].append(vec_relax)
 
-    def step_gr(self):
-        subprocess.run(shlex.split(self.p['exe_solid'] + ' ' + self.p['inp_solid']),
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # calculate wss norm
+        err = abs(vec_relax / vec_new - 1.0)
 
-    def step_mesh(self):
-        subprocess.run(shlex.split('mpirun -np ' + str(self.p['n_procs_mesh']) + ' ' + self.p['exe_fluid'] + ' ' + self.p['inp_mesh']))
+        return vec_relax, err
 
     def project_f2s(self, i):
         src = str(self.p['n_procs_fluid']) + '-procs/steady_' + str(self.p['n_max_fluid']).zfill(3) + '.vtu'
