@@ -77,7 +77,7 @@ class svFSI(Simulation):
         # time stamp
         ct = str(datetime.datetime.now()).replace(' ', '_').replace(':', '-')
 
-        # folder name
+        # output folder name
         self.p['f_out'] = mode + '_res_' + ct
 
         # create output folders
@@ -88,6 +88,7 @@ class svFSI(Simulation):
         # logging
         self.wss = [[]]
         self.rad = [[]]
+        self.r = [[]]
 
     def validate_params(self):
         pass
@@ -124,8 +125,8 @@ class FSG(svFSI):
         svFSI.__init__(self, mode, f_params)
 
     def run(self):
-        self.main_one_way()
-        sys.exit(0)
+        # self.main_two_way()
+        # sys.exit(0)
         try:
             if mode == '1-way':
                 self.main_one_way()
@@ -172,7 +173,8 @@ class FSG(svFSI):
         self.p['coup_imax'] = 100
 
         # relaxation constant
-        self.p['coup_damp'] = 0.5
+        self.p['coup_omega0'] = 0.5
+        self.p['coup_omega'] = 0.0
 
         # maximum number of G&R time steps (excluding prestress)
         self.p['nmax'] = 10
@@ -232,6 +234,7 @@ class FSG(svFSI):
                 out = 'i ' + str(i) + ' \tn ' + str(n)
                 out += '\trad ' + '{:.2e}'.format(rad_err)
                 out += '\twss ' + '{:.2e}'.format(wss_err)
+                out += '\tomega ' + '{:.2e}'.format(self.p['coup_omega'])
                 print(out)
 
                 # check if coupling converged
@@ -392,10 +395,19 @@ class FSG(svFSI):
         # write to file
         write_geo('fsg/solid.vtu', geo)
 
-        # calculate wss norm
+        # store residual
+        if ini:
+            self.r.append([])
+        self.r[-1].append([rad_err, wss_err])
+
+        # compute relaxation constant
+        self.coup_aitken()
+
+        # return error norms
         return rad_err, wss_err
 
     def coup_relax(self, vec, vec_new, i, ini):
+
         if i == 0:
             # prestress: initialzie vec from reference configuration
             vec_relax = vec_new
@@ -408,7 +420,7 @@ class FSG(svFSI):
                 vec_relax = 2.0 * vec_old - vec_old_old
             else:
                 # damp with vec from previous iteration
-                vec_relax = (1.0 - self.p['coup_damp']) * vec_new + self.p['coup_damp'] * vec_old
+                vec_relax = self.p['coup_omega'] * vec_new + (1.0 - self.p['coup_omega']) * vec_old
 
             # start a new sub-list for new load step
             if ini:
@@ -417,10 +429,20 @@ class FSG(svFSI):
         # append current (damped) vec
         vec[-1].append(vec_relax)
 
-        # calculate wss norm
+        # calculate error norm
         err = abs(vec_relax / vec_new - 1.0)
 
         return vec_relax, err
+
+    def coup_aitken(self):
+        if False:#len(self.r[-1]) > 2:
+            r = np.array(self.r[-1][-1])
+            r_old = np.array(self.r[-1][-2])
+            self.p['coup_omega'] = - self.p['coup_omega'] * np.dot(r_old, r - r_old) / np.linalg.norm(r - r_old)**2
+            # pdb.set_trace()
+        else:
+            self.p['coup_omega'] = self.p['coup_omega0']
+        # print(self.p['coup_omega'])
 
     def project_f2s(self, i):
         src = str(self.p['n_procs_fluid']) + '-procs/steady_' + str(self.p['n_max_fluid']).zfill(3) + '.vtu'
