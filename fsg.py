@@ -89,7 +89,8 @@ class svFSI(Simulation):
 
         # logging
         self.log = defaultdict(list)
-        self.sol = defaultdict(list)
+        self.sol = {'disp': np.zeros(self.points_f.shape),
+                    'wss': np.zeros(len(self.points_f))}
 
         # generate load vector
         self.p_vec = np.linspace(1.0, self.p['fmax'], self.p['nmax'] + 1)
@@ -180,7 +181,7 @@ class FSG(svFSI):
 
         # relaxation constant
         exp = 1
-        self.p['coup_omega0'] = 1/2**exp
+        self.p['coup_omega0'] =1/2**exp
         self.p['coup_omega'] = self.p['coup_omega0']
 
         # maximum number of G&R time steps (excluding prestress)
@@ -214,6 +215,8 @@ class FSG(svFSI):
 
                 # update
                 disp_err, wss_err = self.coup_step(i, n == 0, fluid)
+
+                # check for errors
                 if disp_err is None:
                     print('Solid simulation failed')
                     return
@@ -246,8 +249,10 @@ class FSG(svFSI):
                 print('\tcoupling unconverged')
 
     def plot_convergence(self):
-        fig, ax = plt.subplots(1, len(self.log), figsize=(40, 10), dpi=200)
-        for i, name in enumerate(self.log.keys()):
+        fields = ['wss', 'disp', 'r']
+
+        fig, ax = plt.subplots(1, len(fields), figsize=(40, 10), dpi=200)
+        for i, name in enumerate(fields):
             ax[i].set_xlabel('sub-iteration $n$')
             ax[i].xaxis.set_major_locator(MaxNLocator(integer=True))
             ax[i].set_ylabel(name)
@@ -370,6 +375,21 @@ class FSG(svFSI):
             write_geo(self.p['f_load_pressure'], geo)
 
     def coup_step(self, i, ini, fluid):
+        # apply relaxed displacements to fluid
+        self.project_s2f()
+        self.apply_disp(i - 1, fluid)
+
+        # get wss
+        self.post_wss(i - 1, fluid)
+        if self.sol['wss'] is None:
+            return 0.0, None
+
+        # relax wss update
+        wss_err = self.coup_relax('wss', i, ini)
+
+        # store wss in geometry
+        self.write_wss()
+
         # solid update
         self.step_gr()
 
@@ -380,21 +400,6 @@ class FSG(svFSI):
 
         # relax displacement update
         disp_err = self.coup_relax('disp', i, ini)
-
-        # apply relaxed displacements to fluid
-        self.project_s2f()
-        self.apply_disp(i, fluid)
-
-        # get wss
-        self.post_wss(i, fluid)
-        if self.sol['wss'] is None:
-            return 0.0, None
-
-        # relax wss update
-        wss_err = self.coup_relax('wss', i, ini)
-
-        # store wss in geometry
-        self.write_wss()
 
         # store residual
         if ini:
