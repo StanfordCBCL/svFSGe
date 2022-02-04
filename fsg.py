@@ -89,6 +89,7 @@ class svFSI(Simulation):
 
         # logging
         self.log = defaultdict(list)
+        self.sol = defaultdict(list)
 
         # generate load vector
         self.p_vec = np.linspace(1.0, self.p['fmax'], self.p['nmax'] + 1)
@@ -211,10 +212,7 @@ class FSG(svFSI):
                     self.log['load'].append([])
                 self.log['load'][-1].append(fp)
 
-                # solid update
-                self.step_gr()
-
-                # wss update
+                # update
                 disp_err, wss_err = self.coup_step(i, n == 0, fluid)
                 if disp_err is None:
                     print('Solid simulation failed')
@@ -372,28 +370,31 @@ class FSG(svFSI):
             write_geo(self.p['f_load_pressure'], geo)
 
     def coup_step(self, i, ini, fluid):
+        # solid update
+        self.step_gr()
+
         # get solid displacement
-        disp = self.post_disp(i)
-        if disp is None:
+        self.post_disp(i)
+        if self.sol['disp'] is None:
             return None, 0.0
 
         # relax displacement update
-        disp_relax, disp_err = self.coup_relax('disp', disp, i, ini)
+        disp_err = self.coup_relax('disp', i, ini)
 
         # apply relaxed displacements to fluid
-        self.project_s2f(disp_relax)
+        self.project_s2f()
         self.apply_disp(i, fluid)
 
         # get wss
-        wss = self.post_wss(i, fluid)
-        if disp is None:
+        self.post_wss(i, fluid)
+        if self.sol['wss'] is None:
             return 0.0, None
 
         # relax wss update
-        wss_relax, wss_err = self.coup_relax('wss', wss, i, ini)
+        wss_err = self.coup_relax('wss', i, ini)
 
         # store wss in geometry
-        self.write_wss(wss_relax)
+        self.write_wss()
 
         # store residual
         if ini:
@@ -405,12 +406,12 @@ class FSG(svFSI):
 
         return disp_err, wss_err
 
-    def coup_relax(self, name, vec_new, i, ini):
+    def coup_relax(self, name, i, ini):
         if i == 1:
             # first step: no old solution
-            vec_relax = vec_new
+            vec_relax = self.sol[name]
         else:
-            # if ini: converged name of last load step. else: name of last sub-iteration
+            # if ini: converged last load step. else: last sub-iteration
             vec_old = self.log[name][-1][-1]
             if ini and len(self.log[name]) > 1:
                 # linearly extrapolate new name from previous load increment
@@ -418,7 +419,7 @@ class FSG(svFSI):
                 vec_relax = 2.0 * vec_old - vec_old_old
             else:
                 # damp with previous iteration
-                vec_relax = self.p['coup_omega'] * vec_new + (1.0 - self.p['coup_omega']) * vec_old
+                vec_relax = self.p['coup_omega'] * self.sol[name] + (1.0 - self.p['coup_omega']) * vec_old
 
         # start a new sub-list for new load step
         if ini:
@@ -426,16 +427,19 @@ class FSG(svFSI):
             self.log[name].append([])
 
         # append current (damped) name
-        self.log[name + '_new'][-1].append(vec_new)
+        self.log[name + '_new'][-1].append(self.sol[name])
         self.log[name][-1].append(vec_relax)
 
         # calculate error norm
         if i == 1:
             err = 1.0
         else:
-            err = abs(norm_relax / norm_new - 1.0)
+            err = abs(np.linalg.norm(vec_relax) / np.linalg.norm(self.sol[name]) - 1.0)
 
-        return vec_relax, err
+        # update solution
+        self.sol[name] = vec_relax
+
+        return err
 
     def coup_aitken(self):
         if len(self.log['r'][-1]) > 2:
@@ -477,15 +481,13 @@ class FSG(svFSI):
             return None
         res = read_geo(fpath).GetOutput()
         res_s = v2n(res.GetPointData().GetArray('Displacement'))
-        # points = v2n(res.GetPoints().GetData())
 
         # map onto fluid mesh
-        # return (res_s + points)[self.nodes_s - 1][self.i_sf]
-        return res_s[self.nodes_s - 1][self.i_sf]
+        self.sol['disp'] = res_s[self.nodes_s - 1][self.i_sf]
 
-    def project_s2f(self, res_f):
+    def project_s2f(self):
         # create VTK array
-        array = n2v(res_f)
+        array = n2v(self.sol['disp'])
         array.SetName('Displacement')
         self.interface_f.GetPointData().AddArray(array)
 
@@ -494,10 +496,10 @@ class FSG(svFSI):
 
         # write general bc file
         with open('interface_displacement.dat', 'w') as f:
-            f.write('3 2 ' + str(len(res_f)) + '\n')
+            f.write('3 2 ' + str(len(self.sol['disp'])) + '\n')
             f.write('0.0\n')
             f.write('1.0\n')
-            for n, d in zip(self.nodes_f, res_f):
+            for n, d in zip(self.nodes_f, self.sol['disp']):
                 f.write(str(n) + '\n')
                 # for _ in range(2):
                 f.write('0.0 0.0 0.0\n')
@@ -566,11 +568,10 @@ class FSG(svFSI):
             points = v2n(res.GetPoints().GetData())
 
             # get radial coordinate
-            rad = np.sqrt(points[:, 0] ** 2 + points[:, 1] ** 2)
+            r = np.sqrt(points[:, 0] ** 2 + points[:, 1] ** 2)
 
-            # wss from const Poiseuille flow (assume q = q0 = const)
-            # return 4.0 * 0.04 * self.p['q0'] / np.pi / rad ** 3.0
-            wss_f = 4.0 * 0.04 / np.pi / rad ** 3.0
+            # calculate wss from const Poiseuille flow (assume q = q0 = const)
+            wss_f = 4.0 * 0.04 / np.pi / r ** 3.0
         else:
             raise ValueError('Unknown fluid option ' + fluid)
 
@@ -586,15 +587,16 @@ class FSG(svFSI):
         props = v2n(solid.GetPointData().GetArray('varWallProps'))
 
         # interpolate wss to solid mesh
-        return scipy.interpolate.griddata(props[self.nodes_s - 1][:, 1:3], wss_is, (props[:, 1], props[:, 2]))
+        wss = scipy.interpolate.griddata(props[self.nodes_s - 1][:, 1:3], wss_is, (props[:, 1], props[:, 2]))
+        self.sol['wss'] = wss
 
-    def write_wss(self, wss):
+    def write_wss(self):
         # read solid mesh
         solid = read_geo('mesh_tube_fsi/solid/mesh-complete.mesh.vtu').GetOutput()
 
         # get wall properties
         props = v2n(solid.GetPointData().GetArray('varWallProps'))
-        props[:, 6] = wss
+        props[:, 6] = self.sol['wss']
 
         # create VTK array
         array = n2v(props)
