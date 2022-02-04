@@ -4,8 +4,8 @@
     "r_outer": 0.687,
     "height": 7.5,
     "n_seg": 4,
-    "n_axi": 10,
-    "n_cir": 10,
-    "n_rad_gr": 4,
+    "n_axi": 1,
+    "n_cir": 6,
+    "n_rad_gr": 1,
     "n_rad_tran": 40
 }
