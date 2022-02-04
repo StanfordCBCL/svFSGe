@@ -15,6 +15,7 @@ import os
 import vtk
 import json
 import platform
+from collections import defaultdict
 
 if platform.system() == 'Darwin':
     usr = '/Users/pfaller/'
@@ -87,10 +88,7 @@ class svFSI(Simulation):
         os.makedirs(os.path.join(self.p['f_out'], 'fsg'))
 
         # logging
-        self.wss = [[]]
-        self.disp = [[]]
-        self.load = [[]]
-        self.r = [[]]
+        self.log = defaultdict(list)
 
         # generate load vector
         self.p_vec = np.linspace(1.0, self.p['fmax'], self.p['nmax'] + 1)
@@ -182,7 +180,7 @@ class FSG(svFSI):
         # relaxation constant
         exp = 1
         self.p['coup_omega0'] = 1/2**exp
-        self.p['coup_omega'] = 0.0
+        self.p['coup_omega'] = self.p['coup_omega0']
 
         # maximum number of G&R time steps (excluding prestress)
         self.p['nmax'] = 10
@@ -193,9 +191,6 @@ class FSG(svFSI):
     def main_one_way(self, fluid='poiseuille'):
         # initialize fluid
         self.initialize_fluid(self.p['p0'], self.p['q0'], 'interface')
-
-        # wss in reference configuration
-        self.coup_step(0, False, fluid)
 
         # loop load steps
         i = 0
@@ -213,8 +208,8 @@ class FSG(svFSI):
                 # count total iterations (load + sub-iterations)
                 i += 1
                 if n == 0:
-                    self.load.append([])
-                self.load[-1].append(fp)
+                    self.log['load'].append([])
+                self.log['load'][-1].append(fp)
 
                 # solid update
                 self.step_gr()
@@ -253,26 +248,22 @@ class FSG(svFSI):
                 print('\tcoupling unconverged')
 
     def plot_convergence(self):
-        labels = ['WSS', '||displacement||', 'coupling error']#'pressure',
-        data = [self.wss, self.disp, self.r]#self.load,
-        ylims = [[0.188, 0.19], [-1.5e-4, 1.5e-4], [1e-10, 1e1]]
-
-        fig, ax = plt.subplots(1, len(data), figsize=(40, 10), dpi=200)
-        for i, (d, l, yl) in enumerate(zip(data, labels, ylims)):
+        fig, ax = plt.subplots(1, len(self.log), figsize=(40, 10), dpi=200)
+        for i, name in enumerate(self.log.keys()):
             ax[i].set_xlabel('sub-iteration $n$')
             ax[i].xaxis.set_major_locator(MaxNLocator(integer=True))
-            ax[i].set_ylabel(l)
-            for j in d:
-                plot = []
-                for k in j:
-                    if 'disp' in l:
-                        plot += [-rad(k)]
-                    else:
-                        plot += [np.mean(k)]
-                ax[i].plot(plot, linestyle='-', marker='o')
-            if 'error' in l:
+            ax[i].set_ylabel(name)
+            ax[i].grid(True)
+            if name == 'r':
                 ax[i].set_yscale('log')
-            # ax[i].set_ylim(yl)
+            for res in self.log[name]:
+                plot = []
+                for v in res:
+                    if 'disp' in name:
+                        plot += [-rad(v)]
+                    else:
+                        plot += [np.mean(v)]
+                ax[i].plot(plot, linestyle='-', marker='o')
         fig.savefig(os.path.join(self.p['f_out'], 'convergence.png'), bbox_inches='tight')
         plt.show()
         plt.close(fig)
@@ -387,7 +378,7 @@ class FSG(svFSI):
             return None, 0.0
 
         # relax displacement update
-        disp_relax, disp_err = self.coup_relax(self.disp, disp, i, ini)
+        disp_relax, disp_err = self.coup_relax('disp', disp, i, ini)
 
         # apply relaxed displacements to fluid
         self.project_s2f(disp_relax)
@@ -399,48 +390,47 @@ class FSG(svFSI):
             return 0.0, None
 
         # relax wss update
-        wss_relax, wss_err = self.coup_relax(self.wss, wss, i, ini)
+        wss_relax, wss_err = self.coup_relax('wss', wss, i, ini)
 
         # store wss in geometry
         self.write_wss(wss_relax)
 
         # store residual
         if ini:
-            self.r.append([])
-        self.r[-1].append([disp_err, wss_err])
+            self.log['r'].append([])
+        self.log['r'][-1].append([disp_err, wss_err])
 
         # compute relaxation constant
-        self.coup_aitken()
+        # self.coup_aitken()
 
         return disp_err, wss_err
 
-    def coup_relax(self, vec, vec_new, i, ini):
-        if i == 0:
-            # prestress: initialzie vec from reference configuration
+    def coup_relax(self, name, vec_new, i, ini):
+        if i == 1:
+            # first step: no old solution
             vec_relax = vec_new
         else:
-            # if ini: converged vec of last load step. else: vec of last sub-iteration
-            vec_old = vec[-1][-1]
-            if ini and len(vec) > 2:
-                # linearly extrapolate new vec from previous load increment
-                vec_old_old = vec[-2][-1]
+            # if ini: converged name of last load step. else: name of last sub-iteration
+            vec_old = self.log[name][-1][-1]
+            if ini and len(self.log[name]) > 1:
+                # linearly extrapolate new name from previous load increment
+                vec_old_old = self.log[name][-2][-1]
                 vec_relax = 2.0 * vec_old - vec_old_old
             else:
-                # damp with vec from previous iteration
+                # damp with previous iteration
                 vec_relax = self.p['coup_omega'] * vec_new + (1.0 - self.p['coup_omega']) * vec_old
-                # pdb.set_trace()
 
-            # start a new sub-list for new load step
-            if ini:
-                vec.append([])
+        # start a new sub-list for new load step
+        if ini:
+            self.log[name + '_new'].append([])
+            self.log[name].append([])
 
-        # append current (damped) vec
-        vec[-1].append(vec_relax)
+        # append current (damped) name
+        self.log[name + '_new'][-1].append(vec_new)
+        self.log[name][-1].append(vec_relax)
 
         # calculate error norm
-        norm_relax = np.linalg.norm(vec_relax)
-        norm_new = np.linalg.norm(vec_new)
-        if norm_relax == 0.0 and norm_new == 0.0:
+        if i == 1:
             err = 1.0
         else:
             err = abs(norm_relax / norm_new - 1.0)
@@ -448,13 +438,15 @@ class FSG(svFSI):
         return vec_relax, err
 
     def coup_aitken(self):
-        if False:  # len(self.r[-1]) > 2:
-            r = np.array(self.r[-1][-1])
-            r_old = np.array(self.r[-1][-2])
+        if len(self.log['r'][-1]) > 2:
+            r = np.array(self.log['r'][-1][-1])
+            r_old = np.array(self.log['r'][-1][-2])
             self.p['coup_omega'] = - self.p['coup_omega'] * np.dot(r_old, r - r_old) / np.linalg.norm(r - r_old) ** 2
-            # pdb.set_trace()
         else:
             self.p['coup_omega'] = self.p['coup_omega0']
+
+        self.p['coup_omega'] = np.max([self.p['coup_omega'], 0.25])
+        self.p['coup_omega'] = np.min([self.p['coup_omega'], 0.75])
 
     def project_f2s(self, i):
         src = str(self.p['n_procs_fluid']) + '-procs/steady_' + str(self.p['n_max_fluid']).zfill(3) + '.vtu'
