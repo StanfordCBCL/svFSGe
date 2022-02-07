@@ -181,7 +181,7 @@ class FSG(svFSI):
 
         # relaxation constant
         exp = 1
-        self.p['coup_omega0'] =1/2**exp
+        self.p['coup_omega0'] = 1/2**exp
         self.p['coup_omega'] = self.p['coup_omega0']
 
         # maximum number of G&R time steps (excluding prestress)
@@ -209,6 +209,8 @@ class FSG(svFSI):
             for n in range(self.p['coup_imax']):
                 # count total iterations (load + sub-iterations)
                 i += 1
+
+                # store current load
                 if n == 0:
                     self.log['load'].append([])
                 self.log['load'][-1].append(fp)
@@ -375,6 +377,7 @@ class FSG(svFSI):
             write_geo(self.p['f_load_pressure'], geo)
 
     def coup_step(self, i, ini, fluid):
+
         # apply relaxed displacements to fluid
         self.project_s2f()
         self.apply_disp(i - 1, fluid)
@@ -483,7 +486,8 @@ class FSG(svFSI):
         # read from solid mesh
         fpath = '1-procs/gr_' + str(i).zfill(3) + '.vtu'
         if not os.path.exists(fpath):
-            return None
+            self.sol['disp'] = None
+            return
         res = read_geo(fpath).GetOutput()
         res_s = v2n(res.GetPointData().GetArray('Displacement'))
 
@@ -541,7 +545,8 @@ class FSG(svFSI):
             # read fluid pressure
             trg = 'fsg/steady_' + str(i).zfill(3) + '.vtu'
             if not os.path.exists(trg):
-                return None
+                self.sol['wss'] = None
+                return
             res = read_geo(trg)
 
             # calculate WSS
