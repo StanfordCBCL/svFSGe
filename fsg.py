@@ -15,6 +15,7 @@ import os
 import vtk
 import json
 import platform
+import glob
 from collections import defaultdict
 
 if platform.system() == 'Darwin':
@@ -53,14 +54,16 @@ class svFSI(Simulation):
         self.p['fluid'] = fluid
 
         # remove old output folders
-        for f in ['fluid', 'mesh', 'gr', 'fsg']:
+        self.fields = ['fluid', 'solid', 'mesh']
+        for f in self.fields + ['fsg']:
             if f is not 'fsg':
                 f = str(self.p['n_procs_' + f]) + '-procs'
             if os.path.exists(f) and os.path.isdir(f):
                 shutil.rmtree(f)
 
         # make folders
-        os.makedirs('fsg', exist_ok=True)
+        os.makedirs('fsg')
+        os.makedirs(os.path.join('fsg', 'converged'))
 
         # generate and initialize mesh
         generate_mesh()
@@ -90,9 +93,8 @@ class svFSI(Simulation):
         # output folder name
         self.p['f_out'] = fluid + '_res_' + ct
 
-        # create output folders
+        # create output folder
         os.makedirs(self.p['f_out'])
-        os.makedirs(os.path.join(self.p['f_out'], 'fsg'))
 
         # logging
         self.log = defaultdict(list)
@@ -117,19 +119,12 @@ class svFSI(Simulation):
             f.write('0.0 ' + str(-q) + '\n')
             f.write('100.0 ' + str(-q) + '\n')
 
-    def step_fluid(self):
-        subprocess.run(shlex.split(
-            'mpirun -np ' + str(self.p['n_procs_fluid']) + ' ' + self.p['exe_fluid'] + ' ' + self.p['inp_fluid']),
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    def step_solid(self):
-        subprocess.run(shlex.split(self.p['exe_solid'] + ' ' + self.p['inp_solid']),
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    def step_mesh(self):
-        subprocess.run(shlex.split(
-            'mpirun -np ' + str(self.p['n_procs_mesh']) + ' ' + self.p['exe_fluid'] + ' ' + self.p['inp_mesh']),
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def step(self, name, i):
+        if name not in self.fields:
+            raise ValueError('Unknown step option ' + name)
+        exe = 'mpirun -np ' + str(self.p['n_procs_' + name]) + ' ' + self.p['exe_' + name] + ' ' + self.p['inp_' + name]
+        with open(os.path.join('fsg', name + '_' + str(i).zfill(3) + '.log'), 'w') as f:
+            subprocess.run(shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL)
 
 
 class FSG(svFSI):
@@ -155,27 +150,32 @@ class FSG(svFSI):
         # define file paths
         self.p['exe_fluid'] = usr + '/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'
         self.p['exe_solid'] = usr + '/work/repos/svFSI_direct/build/svFSI-build/bin/svFSI'
+        self.p['exe_mesh'] = self.p['exe_fluid']
+
+        # input files
         self.p['inp_fluid'] = 'steady_flow.inp'
         self.p['inp_solid'] = 'gr_restart.inp'
         self.p['inp_mesh'] = 'mesh.inp'
-        self.p['f_load_pressure'] = 'interface_pressure.vtp'
-        self.p['f_load_wss'] = 'interface_wss.vtp'
-        self.p['f_disp'] = 'interface_displacement.vtp'
 
         # number of processors
         self.p['n_procs_fluid'] = 10
+        self.p['n_procs_solid'] = 1
         self.p['n_procs_mesh'] = 10
-        self.p['n_procs_gr'] = 1
 
-        # maximum number of time steps in fluid and solid simulations
+        # maximum number of time steps
         self.p['n_max_fluid'] = 30
         self.p['n_max_mesh'] = 10
+
+        # interface loads
+        self.p['f_load_pressure'] = 'interface_pressure.vtp'
+        self.p['f_load_wss'] = 'interface_wss.vtp'
+        self.p['f_disp'] = 'interface_displacement.vtp'
 
         # homeostatic pressure
         self.p['p0'] = 13.9868
 
         # fluid flow
-        self.p['q0'] = 0.1
+        self.p['q0'] = 0.001
 
         # coupling tolerance
         self.p['coup_tol'] = 1.0e-3
@@ -241,6 +241,14 @@ class FSG(svFSI):
 
                 # check if coupling converged
                 if disp_err < self.p['coup_tol'] and wss_err < self.p['coup_tol']:
+                    # save converged steps
+                    i_conv = str(i).zfill(3)
+                    t_conv = str(t).zfill(3)
+                    for src in glob.glob(os.path.join('fsg', '*_' + i_conv + '.vt*')):
+                        trg = src.replace(i_conv, t_conv).replace('fsg', 'fsg/converged')
+                        shutil.copyfile(src, trg)
+
+                    # terminate coupling
                     break
             else:
                 print('\tcoupling unconverged')
@@ -270,8 +278,7 @@ class FSG(svFSI):
 
     def archive(self):
         # move results
-        # shutil.move('1-procs', os.path.join(self.p['f_out'], 'gr'))
-        # shutil.move('fsg', os.path.join(f_out, 'fsg'))
+        shutil.move('fsg', os.path.join(self.p['f_out'], 'fsg'))
         shutil.move('mesh_tube_fsi', os.path.join(self.p['f_out'], 'mesh_tube_fsi'))
 
         # save parameters
@@ -285,7 +292,7 @@ class FSG(svFSI):
         # initialize with zero displacements
         names_in = ['fsg/fluid.vtu', 'fsg/solid.vtu']
         names_out = ['mesh_' + str(self.p['n_max_mesh']).zfill(3) + '.vtu', 'gr_000.vtu']
-        dirs_out = [str(self.p['n_procs_mesh']) + '-procs', str(self.p['n_procs_gr']) + '-procs']
+        dirs_out = [str(self.p['n_procs_mesh']) + '-procs', str(self.p['n_procs_solid']) + '-procs']
         for n_in, n_out, d_out in zip(names_in, names_out, dirs_out):
             geo = read_geo(n_in).GetOutput()
             array = n2v(np.zeros((geo.GetNumberOfPoints(), 3)))
@@ -345,7 +352,7 @@ class FSG(svFSI):
     def coup_step(self, i, ini):
         # step 1: fluid update
         if self.p['fluid'] == 'fsi':
-            self.step_fluid()
+            self.step('fluid', i)
             self.project_f2s(i)
         self.post_wss(i)
         if self.sol['wss'] is None:
@@ -357,7 +364,7 @@ class FSG(svFSI):
         self.write_wss(i)
 
         # step 2: solid update
-        self.step_solid()
+        self.step('solid', i)
         self.project_s2f(i)
         if self.sol['disp'] is None:
             return None, 0.0
@@ -368,7 +375,7 @@ class FSG(svFSI):
 
         # step 3: deform mesh
         if self.p['fluid'] == 'fsi':
-            self.step_mesh()
+            self.step('mesh', i)
         self.apply_disp(i)
 
         # store residual
@@ -454,7 +461,7 @@ class FSG(svFSI):
 
     def project_s2f(self, i):
         # retrieve solid solution
-        src = str(self.p['n_procs_gr']) + '-procs/gr_' + str(i).zfill(3) + '.vtu'
+        src = str(self.p['n_procs_solid']) + '-procs/gr_' + str(i).zfill(3) + '.vtu'
         if not os.path.exists(src):
             self.sol['disp'] = None
             return
