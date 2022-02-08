@@ -3,8 +3,8 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 100
-Time step size: 0.001
+Number of time steps: 30
+Time step size: 0.05
 
 #Simulation initialization file path: fluid/mesh.vtu
 
@@ -24,15 +24,15 @@ Debug: 0
 # Mesh data
 Add mesh: fluid {
 #   Mesh file path: mesh_tube_fsi/fluid/mesh-complete.mesh.vtu
-   Mesh file path: fluid/mesh.vtu
+   Mesh file path: fsg/fluid.vtu
+   Add face: f_interface {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
+   }
    Add face: f_start {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/start.vtp
    }
    Add face: f_end {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/end.vtp
-   }
-   Add face: f_interface {
-      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
    }
    Add face: f_x_zero {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/x_zero.vtp
@@ -49,7 +49,7 @@ Add equation: fluid {
    Coupled: 0
    Min iterations: 1
    Max iterations: 10
-   Tolerance: 1e-6
+   Tolerance: 1e-3
 
    Density: 1.0
    Viscosity: Constant {Value: 0.04}
@@ -62,8 +62,10 @@ Add equation: fluid {
    }
 
    Output: Spatial {
-      Velocity: t
-      Pressure: t
+#      Velocity: t
+#      Pressure: t
+#      Acceleration: t
+      WSS: t
    }
 
    # fluid: inflow
@@ -104,9 +106,6 @@ Add equation: fluid {
 
    # fluid: outflow resistance
    Add BC: f_end {
-#      Type: Neu
-#      Time dependence: Resistance
-#      Value: 139.868
       Type: Neu
       Time dependence: Unsteady
       Temporal values file path: steady_pressure.dat
