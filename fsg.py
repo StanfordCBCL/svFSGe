@@ -98,6 +98,9 @@ class svFSI(Simulation):
 
         # logging
         self.log = defaultdict(list)
+        self.err = defaultdict(list)
+
+        # current interface solution vector
         self.sol = {'disp': np.zeros(self.points_f.shape),
                     'wss': np.zeros(len(self.points_f))}
 
@@ -107,13 +110,15 @@ class svFSI(Simulation):
     def validate_params(self):
         pass
 
-    def set_pressure(self, p):
+    def set_bc_pressure(self, p):
         with open('steady_pressure.dat', 'w') as f:
             f.write('2 1\n')
             f.write('0.0 ' + str(p) + '\n')
             f.write('100.0 ' + str(p) + '\n')
+        if self.p['fluid'] == 'poiseuille':
+            self.sol['press'] = p * np.ones(self.interface_s.GetNumberOfPoints())
 
-    def set_flow(self, q):
+    def set_bc_flow(self, q):
         with open('steady_flow.dat', 'w') as f:
             f.write('2 1\n')
             f.write('0.0 ' + str(-q) + '\n')
@@ -175,7 +180,7 @@ class FSG(svFSI):
         self.p['p0'] = 13.9868
 
         # fluid flow
-        self.p['q0'] = 0.001
+        self.p['q0'] = 0.1
 
         # coupling tolerance
         self.p['coup_tol'] = 1.0e-3
@@ -184,7 +189,7 @@ class FSG(svFSI):
         self.p['coup_imax'] = 100
 
         # relaxation constant
-        exp = 1
+        exp = 2
         self.p['coup_omega0'] = 1/2**exp
         self.p['coup_omega'] = self.p['coup_omega0']
 
@@ -204,43 +209,41 @@ class FSG(svFSI):
             # pick next load factor
             fp = self.p_vec[t]
 
-            # pressure update
-            self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
-            self.set_flow(self.p['q0'])
-            self.set_pressure(self.p['p0'] * fp)
-
-            print('==== t ' + str(t) + ' ==== fp ' + '{:.2f}'.format(fp) + ' ' + '=' * 40)
+            print('=' * 30 + ' t ' + str(t + 1) + ' ==== fp ' + '{:.2f}'.format(fp) + ' ' + '=' * 30)
 
             # loop sub-iterations
             for n in range(self.p['coup_imax']):
                 # count total iterations (load + sub-iterations)
                 i += 1
 
+                # update simulation
+                self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
+                self.set_bc_flow(self.p['q0'])
+                self.set_bc_pressure(self.p['p0'] * fp)
+
                 # store current load
                 if n == 0:
                     self.log['load'].append([])
                 self.log['load'][-1].append(fp)
 
-                # update
-                disp_err, wss_err = self.coup_step(i, n == 0)
+                # perform coupling step
+                self.coup_step(i, t, n == 0)
 
-                # check for errors
-                if disp_err is None:
-                    print('Solid simulation failed')
-                    return
-                if wss_err is None:
-                    print('Fluid simulation failed')
-                    return
+                # check if simulation failed
+                for name, s in self.sol.items():
+                    if s is None:
+                        print(name + ' simulation failed')
+                        return
 
                 # screen output
-                out = 'i ' + str(i) + ' \tn ' + str(n)
-                out += '\tdisp ' + '{:.2e}'.format(disp_err)
-                out += '\twss ' + '{:.2e}'.format(wss_err)
+                out = 'i ' + str(i) + ' \tn ' + str(n + 1)
+                for name, e in self.err.items():
+                    out += '\t' + name + ' ' + '{:.2e}'.format(e[-1][-1])
                 out += '\tomega ' + '{:.2e}'.format(self.p['coup_omega'])
                 print(out)
 
                 # check if coupling converged
-                if disp_err < self.p['coup_tol'] and wss_err < self.p['coup_tol']:
+                if np.all(np.array([e[-1][-1] for e in self.err.values()]) < self.p['coup_tol']):
                     # save converged steps
                     i_conv = str(i).zfill(3)
                     t_conv = str(t).zfill(3)
@@ -254,7 +257,7 @@ class FSG(svFSI):
                 print('\tcoupling unconverged')
 
     def plot_convergence(self):
-        fields = ['wss', 'disp', 'r']
+        fields = ['disp', 'press', 'wss', 'r']
 
         fig, ax = plt.subplots(1, len(fields), figsize=(40, 10), dpi=200)
         for i, name in enumerate(fields):
@@ -349,28 +352,32 @@ class FSG(svFSI):
             write_geo(self.p['f_load_pressure'], geo)
             write_geo('fsg/fluid_001.vtp', geo)
 
-    def coup_step(self, i, ini):
+    def coup_step(self, i, t, ini):
         # step 1: fluid update
         if self.p['fluid'] == 'fsi':
             self.step('fluid', i)
             self.project_f2s(i)
+        if self.sol['wss'] is None or self.sol['press'] is None:
+            return
         self.post_wss(i)
-        if self.sol['wss'] is None:
-            return 0.0, None
+
+        # relax pressure update
+        # self.coup_relax('press', i, ini)
+        self.write_pressure(i)
 
         # relax wss update
-        # print(str(np.mean(self.sol['wss'])) + '\t' + str(np.mean(rad(self.sol['disp']))))
-        wss_err = self.coup_relax('wss', i, ini)
+        self.coup_relax('wss', i, ini)
         self.write_wss(i)
 
         # step 2: solid update
+        self.set_time(t + 1)
         self.step('solid', i)
         self.project_s2f(i)
         if self.sol['disp'] is None:
-            return None, 0.0
+            return
 
         # relax displacement update
-        disp_err = self.coup_relax('disp', i, ini)
+        self.coup_relax('disp', i, ini)
         self.write_disp(i)
 
         # step 3: deform mesh
@@ -378,15 +385,8 @@ class FSG(svFSI):
             self.step('mesh', i)
         self.apply_disp(i)
 
-        # store residual
-        if ini:
-            self.log['r'].append([])
-        self.log['r'][-1].append([disp_err, wss_err])
-
         # compute relaxation constant
         # self.coup_aitken()
-
-        return disp_err, wss_err
 
     def coup_relax(self, name, i, ini):
         if i == 1:
@@ -394,19 +394,25 @@ class FSG(svFSI):
             vec_relax = self.sol[name]
         else:
             # if ini: converged last load step. else: last sub-iteration
-            vec_old = self.log[name][-1][-1]
-            if ini and len(self.log[name]) > 1:
-                # linearly extrapolate new name from previous load increment
-                vec_old_old = self.log[name][-2][-1]
-                vec_relax = 2.0 * vec_old - vec_old_old
+            vec_m0 = self.log[name][-1][-1]
+            if ini and len(self.log[name]) > 2:
+                # quadratically extrapolate from previous two load increments
+                vec_m1 = self.log[name][-2][-1]
+                vec_m2 = self.log[name][-3][-1]
+                vec_relax = 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
+            elif ini and len(self.log[name]) > 1:
+                # linearly extrapolate from previous load increment
+                vec_m1 = self.log[name][-2][-1]
+                vec_relax = 2.0 * vec_m0 - vec_m1
             else:
                 # damp with previous iteration
-                vec_relax = self.p['coup_omega'] * self.sol[name] + (1.0 - self.p['coup_omega']) * vec_old
+                vec_relax = self.p['coup_omega'] * self.sol[name] + (1.0 - self.p['coup_omega']) * vec_m0
 
         # start a new sub-list for new load step
         if ini:
             self.log[name + '_new'].append([])
             self.log[name].append([])
+            self.err[name].append([])
 
         # append current (damped) name
         self.log[name + '_new'][-1].append(self.sol[name])
@@ -417,11 +423,10 @@ class FSG(svFSI):
             err = 1.0
         else:
             err = abs(np.linalg.norm(vec_relax) / np.linalg.norm(self.sol[name]) - 1.0)
+        self.err[name][-1].append(err)
 
         # update solution
         self.sol[name] = vec_relax
-
-        return err
 
     def coup_aitken(self):
         if len(self.log['r'][-1]) > 2:
@@ -439,6 +444,7 @@ class FSG(svFSI):
         src = str(self.p['n_procs_fluid']) + '-procs/steady_' + str(self.p['n_max_fluid']).zfill(3) + '.vtu'
         if not os.path.exists(src):
             self.sol['wss'] = None
+            self.sol['press'] = None
             return
         trg = 'fsg/fluid_' + str(i).zfill(3) + '.vtu'
         shutil.copyfile(src, trg)
@@ -451,13 +457,7 @@ class FSG(svFSI):
         res_f = v2n(res.GetPointData().GetArray(n))
 
         # map onto solid mesh
-        res_s = res_f[self.nodes_f - 1][self.i_fs]
-
-        # write pressure to file (no relaxation)
-        array = n2v(res_s)
-        array.SetName(n)
-        self.interface_s.GetPointData().AddArray(array)
-        write_geo(self.p['f_load_' + n.lower()], self.interface_s)
+        self.sol['press'] = res_f[self.nodes_f - 1][self.i_fs]
 
     def project_s2f(self, i):
         # retrieve solid solution
@@ -477,6 +477,16 @@ class FSG(svFSI):
 
         # map onto fluid mesh
         self.sol['disp'] = res_s[self.nodes_s - 1][self.i_sf]
+
+    def write_pressure(self, i):
+        # write pressure to file
+        array = n2v(self.sol['press'])
+        array.SetName('Pressure')
+        self.interface_s.GetPointData().AddArray(array)
+        write_geo(self.p['f_load_pressure'], self.interface_s)
+
+        # archive
+        shutil.copyfile(self.p['f_load_pressure'], os.path.join('fsg', 'press_' + str(i).zfill(3) + '.vtp'))
 
     def write_disp(self, i):
         # create VTK array
@@ -573,6 +583,14 @@ class FSG(svFSI):
             # extract wss and point coordinates
             wss_f = v2n(out.GetPointData().GetArray('WSS'))
             points = v2n(out.GetPoints().GetData())
+
+            # add wss to fluid mesh
+            wss_f_vol = np.zeros(res.GetNumberOfPoints())
+            wss_f_vol[self.nodes_f - 1] = wss_f
+            array = n2v(wss_f_vol)
+            array.SetName('WSS Python')
+            res.GetOutput().GetPointData().AddArray(array)
+            write_geo(trg, res.GetOutput())
         elif self.p['fluid'] == 'poiseuille':
             # read deformed interface
             res = read_geo('fsg/fluid_' + str(i).zfill(3) + '.vtp')
@@ -585,6 +603,12 @@ class FSG(svFSI):
 
             # calculate wss from const Poiseuille flow (assume q = q0 = const)
             wss_f = 4.0 * 0.04 / np.pi / r ** 3.0
+
+            # archive
+            array = n2v(wss_f)
+            array.SetName('WSS Python')
+            self.interface_f.GetPointData().AddArray(array)
+            write_geo(os.path.join('fsg', 'wss_' + str(i).zfill(3) + '.vtp'), self.interface_f)
         else:
             raise ValueError('Unknown fluid option ' + self.p['fluid'])
 
@@ -602,12 +626,6 @@ class FSG(svFSI):
         # interpolate wss to solid mesh
         wss = scipy.interpolate.griddata(props[self.nodes_s - 1][:, 1:3], wss_is, (props[:, 1], props[:, 2]))
         self.sol['wss'] = wss
-
-        # archive
-        array = n2v(wss_f)
-        array.SetName('WSS Python')
-        self.interface_f.GetPointData().AddArray(array)
-        write_geo(os.path.join('fsg', 'wss_' + str(i).zfill(3) + '.vtp'), self.interface_f)
 
     def write_wss(self, i):
         # read solid mesh
@@ -627,6 +645,24 @@ class FSG(svFSI):
 
         # archive
         shutil.copyfile('fsg/solid.vtu', os.path.join('fsg', 'wss_' + str(i).zfill(3) + '.vtu'))
+
+    def set_time(self, t):
+        # read solid mesh
+        f = 'fsg/solid.vtu'
+        n = 'varWallProps'
+        solid = read_geo(f).GetOutput()
+
+        # set wall properties
+        props = v2n(solid.GetPointData().GetArray(n))
+        props[:, 7] = t
+
+        # create VTK array
+        array = n2v(props)
+        array.SetName(n)
+        solid.GetPointData().AddArray(array)
+
+        # write to file
+        write_geo(f, solid)
 
 
 def rad(x):
