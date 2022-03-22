@@ -73,7 +73,7 @@ class Mesh(Simulation):
         # initialize arrays
         self.points = np.zeros((n_points, 3))
         self.cells = np.zeros((n_cells, 8))
-        self.cosy = np.zeros((n_points, 7))
+        self.cosy = np.zeros((n_points, 8))
         self.fiber_dict = defaultdict(lambda: np.zeros((n_points, 3)))
         self.vol_dict = defaultdict(list)
         self.surf_dict = defaultdict(list)
@@ -392,7 +392,7 @@ class Mesh(Simulation):
 
 
 def generate_mesh(displacement=None):
-    f_params = 'in/ring_cmame.json'
+    f_params = 'in/coarse_ring.json'
     mesh = Mesh(f_params)
     mesh.generate_points()
     mesh.generate_cells()
