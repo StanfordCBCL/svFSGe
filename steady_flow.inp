@@ -3,7 +3,7 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 30
+Number of time steps: 100
 Time step size: 0.05
 
 #Simulation initialization file path: fluid/mesh.vtu
@@ -12,6 +12,7 @@ Save results to VTK format: 1
 Name prefix of saved VTK files: steady
 Increment in saving VTK files: 1
 Start saving after time step: 1
+Save results in folder: steady
 
 Increment in saving restart files: 1
 Convert BIN to VTK format: 0
@@ -23,8 +24,8 @@ Debug: 0
 #----------------------------------------------------------------
 # Mesh data
 Add mesh: fluid {
-#   Mesh file path: mesh_tube_fsi/fluid/mesh-complete.mesh.vtu
-   Mesh file path: fsg/fluid.vtu
+   Mesh file path: mesh_tube_fsi/fluid/mesh-complete.mesh.vtu
+#   Mesh file path: fsg/fluid.vtu
    Add face: f_interface {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
    }
@@ -56,7 +57,7 @@ Add equation: fluid {
    Backflow stabilization coefficient: 0.2
 
    LS type: GMRES {
-      Preconditioner: Trilinos-ILUT
+#      Preconditioner: Trilinos-ILUT
       Tolerance: 1e-3
       Max iterations: 100
    }
@@ -71,13 +72,13 @@ Add equation: fluid {
    # fluid: inflow
    Add BC: f_start {
       Type: Dir
+      Value: 0.1
       Impose flux: t
       Zero out perimeter: f
-      Ramp function: t
-      Time dependence: Unsteady
+      Time dependence: Steady
       Profile: User_defined
-      Temporal values file path: steady_flow.dat
       Spatial profile file path: mesh_tube_fsi/inflow_profile.dat
+      Effective direction: (0, 0, 1)
    }
 
    # fluid: symmetry
@@ -101,29 +102,13 @@ Add equation: fluid {
       Type: Dir
       Time dependence: Steady
       Value: 0.0
-#      Zero out perimeter: f
+      Zero out perimeter: f
    }
 
-   # fluid: outflow resistance
+   # fluid: outflow pressure
    Add BC: f_end {
       Type: Neu
-      Time dependence: Unsteady
-      Temporal values file path: steady_pressure.dat
-   }
-
-   # fluid: outflow normal to surface
-   Add BC: f_end {
-      Type: Dir
-      Value: 0.0
-      Effective direction: (1, 0, 0)
-      Impose on state variable integral: t
-      Zero out perimeter: f
-   }
-   Add BC: f_end {
-      Type: Dir
-      Value: 0.0
-      Effective direction: (0, 1, 0)
-      Impose on state variable integral: t
-      Zero out perimeter: f
+      Time dependence: Steady
+      Value: 13.9868
    }
 }
