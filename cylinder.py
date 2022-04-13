@@ -73,7 +73,7 @@ class Mesh(Simulation):
         # initialize arrays
         self.points = np.zeros((n_points, 3))
         self.cells = np.zeros((n_cells, 8))
-        self.cosy = np.zeros((n_points, 8))
+        self.cosy = np.zeros((n_points, 9))
         self.fiber_dict = defaultdict(lambda: np.zeros((n_points, 3)))
         self.vol_dict = defaultdict(list)
         self.surf_dict = defaultdict(list)
@@ -201,8 +201,12 @@ class Mesh(Simulation):
                     self.cosy[pid, 1] = ic / self.p['n_cell_cir'] / self.p['n_seg']
                     self.cosy[pid, 2] = ia / self.p['n_axi']
                     self.cosy[pid, 3:6] = self.points[pid, :]
-                    self.cosy[pid, 6] = 4 * 0.04 * 1.0 / np.pi / self.p['r_inner']**3
-                    # self.cosy[pid, 6] = 4 * 0.04 * 1.0 / np.pi / rad**3
+                    # wss
+                    self.cosy[pid, 6] = self.p['n_seg'] * 4.0 * 0.04 * 0.1 / np.pi / self.p['r_inner']**3
+                    # time
+                    self.cosy[pid, 7] = 0.0
+                    # interface id
+                    self.cosy[pid, 8] = ia * self.p['n_point_cir'] + ic
         
                     # store fibers
                     self.fiber_dict['axi'][pid] = [0, 0, 1]
@@ -392,7 +396,7 @@ class Mesh(Simulation):
 
 
 def generate_mesh(displacement=None):
-    f_params = 'in/coarse_ring.json'
+    f_params = 'in/fsg_coarse.json'
     mesh = Mesh(f_params)
     mesh.generate_points()
     mesh.generate_cells()
