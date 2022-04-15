@@ -3,8 +3,8 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 1
-Time step size: 1.0
+Number of time steps: 10
+Time step size: 0.1
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: mesh
@@ -36,6 +36,7 @@ Add mesh: fluid {
    Add face: f_y_zero {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
    }
+#Initial displacements file path: 10-procs/mesh_010.vtu
 }
 
 #----------------------------------------------------------------
@@ -43,24 +44,18 @@ Add mesh: fluid {
 Add equation: struct {
    Coupled: 1
    Min iterations: 1
-   Max iterations: 20
-   Tolerance: 1e-6
+   Max iterations: 50
+   Tolerance: 1e-12
 
    Constitutive model: stVK
    Density: 0.0
    Elasticity modulus: 1.0
-   Poisson ratio: 0.0
+   Poisson ratio: 0.3
 
-   LS type: CG {
-      Preconditioner: FSILS
-      Tolerance: 1e-4
-      Max iterations:      1000
+   LS type: GMRES {
+      Preconditioner: Trilinos-ILUT
+      Tolerance: 1e-12
    }
-
-#   LS type: GMRES {
-#      Preconditioner: Trilinos-ILUT
-#      Tolerance: 1e-3
-#   }
 
    Output: Spatial {
       Displacement: t

@@ -5,6 +5,7 @@ Continue previous simulation: 0
 Number of spatial dimensions: 3
 Number of time steps: 11
 Time step size: 1.0
+Spectral radius of infinite time step: 0.0
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: gr
@@ -26,7 +27,7 @@ Debug: 0
 Add mesh: msh {
    Mesh file path:    mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
-   Number of variable wall properties: 7
+   Number of variable wall properties: 9
    Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Add face: start {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/start.vtp
@@ -85,7 +86,7 @@ Add equation: struct {
       Absolute tolerance:   1e-9
       Max iterations:      300
       Krylov space dimension: 300
-#      Preconditioner:  Trilinos-GR
+      Preconditioner:  Trilinos-ILU
    }
 
    # plane strain
@@ -130,11 +131,11 @@ Add equation: struct {
    }
 
    # step 2: g&r
-   Add BC: inside {
-      Type: Neu
-      Time dependence: Unsteady
-      Temporal values file path: load_gr.dat
-      Ramp function: t
-      Follower pressure load: t
-   }
+#   Add BC: inside {
+#      Type: Neu
+#      Time dependence: Unsteady
+#      Temporal values file path: load_gr.dat
+#      Ramp function: t
+#      Follower pressure load: t
+#   }
 }

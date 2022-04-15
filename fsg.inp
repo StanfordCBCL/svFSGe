@@ -3,7 +3,7 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 10
+Number of time steps: 100
 Time step size: 5e-2
 
 Save results to VTK format: 1
@@ -27,24 +27,24 @@ Add mesh: fluid {
    Add face: f_end {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/end.vtp
    }
-   Add face: f_interface {
-      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
-   }
    Add face: f_x_zero {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/x_zero.vtp
    }
    Add face: f_y_zero {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
    }
+   Add face: f_interface {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
+   }
    Domain: 0
-   Initial pressures file path:  10-procs/steady_130.vtu
-   Initial velocities file path: 10-procs/steady_130.vtu
+#   Initial pressures file path:  1-procs/steady_030.vtu
+#   Initial velocities file path: 1-procs/steady_030.vtu
 }
 
 Add mesh: solid {
    Mesh file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
-   Number of variable wall properties: 6
+   Number of variable wall properties: 9
    Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Add face: s_start {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/start.vtp
@@ -101,17 +101,25 @@ Add equation: FSI {
    }
 
    LS type: GMRES {
-      Preconditioner: Trilinos-GR
-#      Preconditioner: Trilinos-ILUT
+#      Preconditioner: Trilinos-GR
+      Preconditioner: Trilinos-ILUT
       Tolerance: 1e-3
       Max iterations: 500
       Krylov space dimension: 50
    }
 
    Output: Spatial {
-      Displacement: t
-      Velocity: t
-      Pressure: t
+#      Displacement: t
+       Velocity: t
+       Pressure: t
+#      Jacobian: t
+#      Stress: t
+#      Strain: t
+#      Cauchy_stress: t
+#      VonMises_stress: t
+#      Acceleration: t
+#      Fiber_direction: t
+      WSS: t
    }
 
    Output: Alias {
