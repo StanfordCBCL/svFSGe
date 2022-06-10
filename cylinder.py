@@ -73,7 +73,7 @@ class Mesh(Simulation):
         # initialize arrays
         self.points = np.zeros((n_points, 3))
         self.cells = np.zeros((n_cells, 8))
-        self.cosy = np.zeros((n_points, 9))
+        self.cosy = np.zeros((n_points, 12))
         self.fiber_dict = defaultdict(lambda: np.zeros((n_points, 3)))
         self.vol_dict = defaultdict(list)
         self.surf_dict = defaultdict(list)
@@ -207,6 +207,8 @@ class Mesh(Simulation):
                     self.cosy[pid, 7] = 0.0
                     # interface id
                     self.cosy[pid, 8] = ia * self.p['n_point_cir'] + ic
+                    # interface node id, dwss
+                    self.cosy[pid, 9:] = 0.0
         
                     # store fibers
                     self.fiber_dict['axi'][pid] = [0, 0, 1]
@@ -328,7 +330,8 @@ class Mesh(Simulation):
                 thresh = vtk.vtkThreshold()
                 thresh.SetInputData(surfaces)
                 thresh.SetInputArrayToProcess(0, 0, 0, 0, 'ids_' + name)
-                thresh.ThresholdBetween(1, 1)
+                thresh.SetUpperThreshold(1)
+                thresh.SetLowerThreshold(1)
                 thresh.Update()
                 surf = thresh.GetOutput()
 
@@ -396,7 +399,7 @@ class Mesh(Simulation):
 
 
 def generate_mesh(displacement=None):
-    f_params = 'in/fsg_coarse.json'
+    f_params = 'in/minimal.json'
     mesh = Mesh(f_params)
     mesh.generate_points()
     mesh.generate_cells()

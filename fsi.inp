@@ -3,7 +3,7 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 1100
+Number of time steps: 10000
 Time step size: 1.0e-1
 
 Save results to VTK format: 1
@@ -45,14 +45,14 @@ Add mesh: fluid {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
    }
    Domain: 0
-   #Initial pressures file path:  steady/steady_100.vtu
-   #Initial velocities file path: steady/steady_100.vtu
+#   Initial pressures file path:  steady/steady_100.vtu
+#   Initial velocities file path: steady/steady_100.vtu
 }
 
 Add mesh: solid {
    Mesh file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
-   Number of variable wall properties: 9
+   Number of variable wall properties: 12
 #   Variable wall properties file path: fsg/solid.vtu
    Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Add face: s_start {
@@ -99,14 +99,14 @@ Add equation: FSI {
 
    Domain: 1 {
        Equation: struct
+       Poisson ratio: 0.0
        Constitutive model: GR_Equilibrated
        Density: 0.0
        Elasticity modulus: 1.0e-16
-       Poisson ratio: 0.0
+#       Mass damping: 1e6
 #   Constitutive model: stVK
 #   Density: 1.0
 #   Elasticity modulus: 100.0
-#   Poisson ratio: 0.0
    }
 
    LS type: GMRES {
@@ -121,12 +121,13 @@ Add equation: FSI {
       Tolerance: 1e-3
       Max iterations: 50
       Krylov space dimension: 500
+#      Use Trilinos for assembly: 1
    }
 
    Output: Spatial {
       Displacement: t
-       Velocity: t
-       Pressure: t
+      Velocity: t
+      Pressure: t
       Jacobian: t
       Stress: t
       Strain: t
@@ -172,9 +173,12 @@ Add equation: FSI {
    # fluid: outflow pressure: pre-stress
    Add BC: f_end {
       Type: Neu
-      Time dependence: Steady
-      Value: 13.9868
+#      Time dependence: Steady
+#      Value: 13.9868
+      Time dependence: Resistance
+      Value: 139.868
    }
+
    # fluid: outflow pressure: g&r
 #  Add BC: f_end {
 #      Type: Neu
@@ -214,6 +218,16 @@ Add equation: FSI {
       Impose on state variable integral: t
       Zero out perimeter: f
    }
+
+   # solid: damping
+#   Add BC: s_outside {
+#      Type: Robin
+#      Time dependence: Steady
+#      Value: 0.0
+#      Stiffness : 0.0
+#      Damping: 1.0
+#      Apply along normal direction: f
+#   }
 }
 
 Add equation: mesh {
