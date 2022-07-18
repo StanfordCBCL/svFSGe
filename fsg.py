@@ -54,10 +54,10 @@ class svFSI(Simulation):
         self.p['fluid'] = fluid
 
         # remove old output folders
-        self.fields = ['fluid', 'solid', 'mesh']
+        self.fields = ['fluid', 'solid', 'mesh', 'fsi']
         for f in self.fields + ['fsg']:
             if f is not 'fsg':
-                f = str(self.p['n_procs_' + f]) + '-procs'
+                f = str(self.p['n_procs'][f]) + '-procs'
             if os.path.exists(f) and os.path.isdir(f):
                 shutil.rmtree(f)
 
@@ -127,9 +127,12 @@ class svFSI(Simulation):
     def step(self, name, i):
         if name not in self.fields:
             raise ValueError('Unknown step option ' + name)
-        exe = 'mpirun -np ' + str(self.p['n_procs_' + name]) + ' ' + self.p['exe_' + name] + ' ' + self.p['inp_' + name]
+        exe = 'mpirun -np'
+        for k in ['n_procs', 'exe', 'inp']:
+            exe += ' ' + str(self.p[k][name])
         with open(os.path.join('fsg', name + '_' + str(i).zfill(3) + '.log'), 'w') as f:
-            subprocess.run(shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL)
+            # subprocess.run(shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL)
+            subprocess.run(shlex.split(exe))
 
 
 class FSG(svFSI):
@@ -153,23 +156,19 @@ class FSG(svFSI):
 
     def set_params(self):
         # define file paths
-        self.p['exe_fluid'] = usr + '/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'
-        self.p['exe_solid'] = usr + '/work/repos/svFSI_direct/build/svFSI-build/bin/svFSI'
-        self.p['exe_mesh'] = self.p['exe_fluid']
+        self.p['exe'] = {'fluid': usr + '/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI',
+                         'solid': usr + '/work/repos/svFSI_direct/build/svFSI-build/bin/svFSI'}
+        self.p['exe']['mesh'] = self.p['exe']['fluid']
+        self.p['exe']['fsi'] = self.p['exe']['solid']
 
         # input files
-        self.p['inp_fluid'] = 'steady_flow.inp'
-        self.p['inp_solid'] = 'gr_restart.inp'
-        self.p['inp_mesh'] = 'mesh.inp'
+        self.p['inp'] = {'fluid': 'steady_flow.inp', 'solid': 'gr_restart.inp', 'mesh': 'mesh.inp', 'fsi': 'fsi.inp'}
 
         # number of processors
-        self.p['n_procs_fluid'] = 10
-        self.p['n_procs_solid'] = 1
-        self.p['n_procs_mesh'] = 10
+        self.p['n_procs'] = {'fluid': 1, 'solid': 1, 'mesh': 10, 'fsi': 10}
 
         # maximum number of time steps
-        self.p['n_max_fluid'] = 30
-        self.p['n_max_mesh'] = 10
+        self.p['n_max'] = {'fluid': 30, 'mesh': 10, 'fsi': 100}
 
         # interface loads
         self.p['f_load_pressure'] = 'interface_pressure.vtp'
@@ -197,7 +196,7 @@ class FSG(svFSI):
         self.p['nmax'] = 10
 
         # maximum load factor
-        self.p['fmax'] = 1.5
+        self.p['fmax'] = 1.0
 
     def main(self):
         # initialize fluid
@@ -294,8 +293,8 @@ class FSG(svFSI):
 
         # initialize with zero displacements
         names_in = ['fsg/fluid.vtu', 'fsg/solid.vtu']
-        names_out = ['mesh_' + str(self.p['n_max_mesh']).zfill(3) + '.vtu', 'gr_000.vtu']
-        dirs_out = [str(self.p['n_procs_mesh']) + '-procs', str(self.p['n_procs_solid']) + '-procs']
+        names_out = ['mesh_' + str(self.p['n_max']['mesh']).zfill(3) + '.vtu', 'gr_000.vtu']
+        dirs_out = [str(self.p['n_procs']['mesh']) + '-procs', str(self.p['n_procs']['solid']) + '-procs']
         for n_in, n_out, d_out in zip(names_in, names_out, dirs_out):
             geo = read_geo(n_in).GetOutput()
             array = n2v(np.zeros((geo.GetNumberOfPoints(), 3)))
@@ -353,9 +352,12 @@ class FSG(svFSI):
             write_geo('fsg/fluid_001.vtp', geo)
 
     def coup_step(self, i, t, ini):
-        # step 1: fluid update
         if self.p['fluid'] == 'fsi':
+            # step 1: fluid update
             self.step('fluid', i)
+
+            # step 1.5: fsi update
+            self.step('fsi', i)
             self.project_f2s(i)
         if self.sol['wss'] is None or self.sol['press'] is None:
             return
@@ -441,7 +443,7 @@ class FSG(svFSI):
 
     def project_f2s(self, i):
         # retrieve fluid solution
-        src = str(self.p['n_procs_fluid']) + '-procs/steady_' + str(self.p['n_max_fluid']).zfill(3) + '.vtu'
+        src = str(self.p['n_procs']['fluid']) + '-procs/steady_' + str(self.p['n_max']['fluid']).zfill(3) + '.vtu'
         if not os.path.exists(src):
             self.sol['wss'] = None
             self.sol['press'] = None
@@ -461,7 +463,7 @@ class FSG(svFSI):
 
     def project_s2f(self, i):
         # retrieve solid solution
-        src = str(self.p['n_procs_solid']) + '-procs/gr_' + str(i).zfill(3) + '.vtu'
+        src = str(self.p['n_procs']['solid']) + '-procs/gr_' + str(i).zfill(3) + '.vtu'
         if not os.path.exists(src):
             self.sol['disp'] = None
             return
@@ -516,7 +518,7 @@ class FSG(svFSI):
     def apply_disp(self, i):
         if self.p['fluid'] == 'fsi':
             # get mesh displacement solution
-            src = str(self.p['n_procs_mesh']) + '-procs/mesh_' + str(self.p['n_max_mesh']).zfill(3) + '.vtu'
+            src = str(self.p['n_procs']['mesh']) + '-procs/mesh_' + str(self.p['n_max']['mesh']).zfill(3) + '.vtu'
             f_out = 'fsg/fluid.vtu'
         elif self.p['fluid'] == 'poiseuille':
             # get (relaxed) displacement from g&r solution
