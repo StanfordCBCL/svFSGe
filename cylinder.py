@@ -73,7 +73,7 @@ class Mesh(Simulation):
         # initialize arrays
         self.points = np.zeros((n_points, 3))
         self.cells = np.zeros((n_cells, 8))
-        self.cosy = np.zeros((n_points, 12))
+        self.cosy = np.zeros((n_points, 13))
         self.fiber_dict = defaultdict(lambda: np.zeros((n_points, 3)))
         self.vol_dict = defaultdict(list)
         self.surf_dict = defaultdict(list)
@@ -207,8 +207,9 @@ class Mesh(Simulation):
                     self.cosy[pid, 7] = 0.0
                     # interface id
                     self.cosy[pid, 8] = ia * self.p['n_point_cir'] + ic
-                    # interface node id, dwss
+                    # interface node id, dwss, wss_old
                     self.cosy[pid, 9:] = 0.0
+                    self.cosy[pid, 12] = 1337
         
                     # store fibers
                     self.fiber_dict['axi'][pid] = [0, 0, 1]
@@ -399,7 +400,7 @@ class Mesh(Simulation):
 
 
 def generate_mesh(displacement=None):
-    f_params = 'in/minimal.json'
+    f_params = 'in/minimal_tube.json'
     mesh = Mesh(f_params)
     mesh.generate_points()
     mesh.generate_cells()
