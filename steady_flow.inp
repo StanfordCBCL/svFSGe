@@ -3,8 +3,8 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 100
-Time step size: 0.05
+Number of time steps: 20
+Time step size: 0.2
 
 #Simulation initialization file path: fluid/mesh.vtu
 
@@ -24,8 +24,8 @@ Debug: 0
 #----------------------------------------------------------------
 # Mesh data
 Add mesh: fluid {
-   Mesh file path: mesh_tube_fsi/fluid/mesh-complete.mesh.vtu
-#   Mesh file path: fsg/fluid.vtu
+#   Mesh file path: mesh_tube_fsi/fluid/mesh-complete.mesh.vtu
+   Mesh file path: partitioned/fluid.vtu
    Add face: f_interface {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
    }
@@ -42,6 +42,8 @@ Add mesh: fluid {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
    }
    Domain: 0
+   Initial pressures file path:  partitioned/fluid.vtu
+   Initial velocities file path: partitioned/fluid.vtu
 }
 
 #----------------------------------------------------------------
@@ -57,7 +59,10 @@ Add equation: fluid {
    Backflow stabilization coefficient: 0.2
 
    LS type: GMRES {
-#      Preconditioner: Trilinos-ILUT
+      Preconditioner: Trilinos-ILUT
+#      Preconditioner: Trilinos-ML # slow
+#      Preconditioner: Trilinos-Diagonal # slow
+#      Preconditioner: Trilinos-ICT
       Tolerance: 1e-3
       Max iterations: 100
    }
@@ -110,5 +115,7 @@ Add equation: fluid {
       Type: Neu
       Time dependence: Steady
       Value: 13.9868
+#      Time dependence: Unsteady
+#      Temporal values file path: steady_pressure.dat
    }
 }

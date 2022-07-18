@@ -1,0 +1,11 @@
+{
+    "f_out": "mesh_tube_fsi",
+    "r_inner": 0.64678,
+    "r_outer": 0.687,
+    "height": 15.0,
+    "n_seg": 4,
+    "n_axi": 12,
+    "n_cir": 6,
+    "n_rad_gr": 1,
+    "n_rad_tran": 3
+}

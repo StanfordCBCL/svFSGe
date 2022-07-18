@@ -3,8 +3,8 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 10
-Time step size: 0.1
+Number of time steps: 5
+Time step size: 0.2
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: mesh

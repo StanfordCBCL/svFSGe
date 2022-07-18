@@ -18,13 +18,6 @@ import platform
 import glob
 from collections import defaultdict
 
-if platform.system() == 'Darwin':
-    usr = '/Users/pfaller/'
-    sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
-else:
-    usr = '/home/pfaller'
-    sys.path.append(os.path.join(usr, 'work/osmsc/curation_scripts'))
-
 import scipy.interpolate
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
@@ -35,7 +28,12 @@ from vtk.util.numpy_support import numpy_to_vtk as n2v
 from simulation import Simulation
 from cylinder import generate_mesh
 
+
+if platform.system() == 'Darwin':
+    usr = '/Users/pfaller/'
+
 # from https://github.com/StanfordCBCL/DataCuration
+sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
 from vtk_functions import read_geo, write_geo, calculator, extract_surface, clean, threshold, get_all_arrays
 
 
@@ -55,15 +53,15 @@ class svFSI(Simulation):
 
         # remove old output folders
         self.fields = ['fluid', 'solid', 'mesh', 'fsi']
-        for f in self.fields + ['fsg']:
-            if f is not 'fsg':
-                f = str(self.p['n_procs'][f]) + '-procs'
+        for f in self.fields + [self.p['root']]:
+            if f is not self.p['root']:
+                f = str(self.p['n_procs_' + f]) + '-procs'
             if os.path.exists(f) and os.path.isdir(f):
                 shutil.rmtree(f)
 
         # make folders
-        os.makedirs('fsg')
-        os.makedirs(os.path.join('fsg', 'converged'))
+        os.makedirs(self.p['root'])
+        os.makedirs(os.path.join(self.p['root'], 'converged'))
 
         # generate and initialize mesh
         generate_mesh()
@@ -131,8 +129,10 @@ class svFSI(Simulation):
         for k in ['n_procs', 'exe', 'inp']:
             exe += ' ' + str(self.p[k][name])
         with open(os.path.join('fsg', name + '_' + str(i).zfill(3) + '.log'), 'w') as f:
-            # subprocess.run(shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL)
-            subprocess.run(shlex.split(exe))
+            if self.p['debug']:
+                subprocess.run(shlex.split(exe))
+            else:
+                subprocess.run(shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL)
 
 
 class FSG(svFSI):
@@ -155,6 +155,12 @@ class FSG(svFSI):
         self.plot_convergence()
 
     def set_params(self):
+        # debug mode?
+        self.p['debug'] = False
+
+        # simulation folder
+        self.p['root'] = 'partitioned'
+
         # define file paths
         self.p['exe'] = {'fluid': usr + '/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI',
                          'solid': usr + '/work/repos/svFSI_direct/build/svFSI-build/bin/svFSI'}
@@ -168,12 +174,12 @@ class FSG(svFSI):
         self.p['n_procs'] = {'fluid': 1, 'solid': 1, 'mesh': 10, 'fsi': 10}
 
         # maximum number of time steps
-        self.p['n_max'] = {'fluid': 30, 'mesh': 10, 'fsi': 100}
+        self.p['n_max'] = {'fluid': 20, 'mesh': 5, 'fsi': 100}
 
         # interface loads
         self.p['f_load_pressure'] = 'interface_pressure.vtp'
         self.p['f_load_wss'] = 'interface_wss.vtp'
-        self.p['f_disp'] = 'interface_displacement.vtp'
+        self.p['f_disp'] = 'interface_displacement' # vtp and dat
 
         # homeostatic pressure
         self.p['p0'] = 13.9868
@@ -216,6 +222,7 @@ class FSG(svFSI):
                 i += 1
 
                 # update simulation
+                self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'vol')
                 self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
                 self.set_bc_flow(self.p['q0'])
                 self.set_bc_pressure(self.p['p0'] * fp)
@@ -246,8 +253,8 @@ class FSG(svFSI):
                     # save converged steps
                     i_conv = str(i).zfill(3)
                     t_conv = str(t).zfill(3)
-                    for src in glob.glob(os.path.join('fsg', '*_' + i_conv + '.vt*')):
-                        trg = src.replace(i_conv, t_conv).replace('fsg', 'fsg/converged')
+                    for src in glob.glob(os.path.join(self.p['root'], '*_' + i_conv + '.vt*')):
+                        trg = src.replace(i_conv, t_conv).replace(self.p['root'], self.p['root'] + '/converged')
                         shutil.copyfile(src, trg)
 
                     # terminate coupling
@@ -280,19 +287,19 @@ class FSG(svFSI):
 
     def archive(self):
         # move results
-        shutil.move('fsg', os.path.join(self.p['f_out'], 'fsg'))
+        shutil.move(self.p['root'], os.path.join(self.p['f_out'], self.p['root']))
         shutil.move('mesh_tube_fsi', os.path.join(self.p['f_out'], 'mesh_tube_fsi'))
 
         # save parameters
-        self.save_params('fsg.json')
+        self.save_params(self.p['root'] + '.json')
 
     def initialize_mesh(self):
         # initial fluid mesh (zero displacements)
         for f in ['fluid', 'solid']:
-            shutil.copyfile('mesh_tube_fsi/' + f + '/mesh-complete.mesh.vtu', 'fsg/' + f + '.vtu')
+            shutil.copyfile('mesh_tube_fsi/' + f + '/mesh-complete.mesh.vtu', self.p['root'] + '/' + f + '.vtu')
 
         # initialize with zero displacements
-        names_in = ['fsg/fluid.vtu', 'fsg/solid.vtu']
+        names_in = [self.p['root'] + '/fluid.vtu', self.p['root'] + '/solid.vtu']
         names_out = ['mesh_' + str(self.p['n_max']['mesh']).zfill(3) + '.vtu', 'gr_000.vtu']
         dirs_out = [str(self.p['n_procs']['mesh']) + '-procs', str(self.p['n_procs']['solid']) + '-procs']
         for n_in, n_out, d_out in zip(names_in, names_out, dirs_out):
@@ -304,11 +311,11 @@ class FSG(svFSI):
             os.makedirs(d_out, exist_ok=True)
             write_geo(os.path.join(d_out, n_out), geo)
 
-        shutil.copyfile('mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp', 'fsg/wss_000.vtp')
+        shutil.copyfile('mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp', self.p['root'] + '/wss_000.vtp')
 
     def initialize_fluid(self, p, q, mode):
         if mode == 'vol':
-            geo = read_geo('fsg/fluid.vtu').GetOutput()
+            geo = read_geo(self.p['root'] + '/fluid.vtu').GetOutput()
         elif mode == 'interface':
             geo = self.interface_s
         else:
@@ -346,10 +353,10 @@ class FSG(svFSI):
 
         # write to file
         if mode == 'vol':
-            write_geo('fsg/fluid.vtu', geo)
+            write_geo(self.p['root'] + '/fluid.vtu', geo)
         elif mode == 'interface':
             write_geo(self.p['f_load_pressure'], geo)
-            write_geo('fsg/fluid_001.vtp', geo)
+            write_geo(self.p['root'] + '/fluid_001.vtp', geo)
 
     def coup_step(self, i, t, ini):
         if self.p['fluid'] == 'fsi':
@@ -443,12 +450,12 @@ class FSG(svFSI):
 
     def project_f2s(self, i):
         # retrieve fluid solution
-        src = str(self.p['n_procs']['fluid']) + '-procs/steady_' + str(self.p['n_max']['fluid']).zfill(3) + '.vtu'
+        src = 'steady/steady_' + str(self.p['n_max']['fluid']).zfill(3) + '.vtu'
         if not os.path.exists(src):
             self.sol['wss'] = None
             self.sol['press'] = None
             return
-        trg = 'fsg/fluid_' + str(i).zfill(3) + '.vtu'
+        trg = self.p['root'] + '/fluid_' + str(i).zfill(3) + '.vtu'
         shutil.copyfile(src, trg)
 
         # export interface pressure
@@ -467,7 +474,7 @@ class FSG(svFSI):
         if not os.path.exists(src):
             self.sol['disp'] = None
             return
-        trg = 'fsg/solid_' + str(i).zfill(3) + '.vtu'
+        trg = self.p['root'] + '/solid_' + str(i).zfill(3) + '.vtu'
         shutil.copyfile(src, trg)
 
         # export interface displacement
@@ -488,7 +495,7 @@ class FSG(svFSI):
         write_geo(self.p['f_load_pressure'], self.interface_s)
 
         # archive
-        shutil.copyfile(self.p['f_load_pressure'], os.path.join('fsg', 'press_' + str(i).zfill(3) + '.vtp'))
+        shutil.copyfile(self.p['f_load_pressure'], os.path.join(self.p['root'], 'press_' + str(i).zfill(3) + '.vtp'))
 
     def write_disp(self, i):
         # create VTK array
@@ -497,10 +504,10 @@ class FSG(svFSI):
         self.interface_f.GetPointData().AddArray(array)
 
         # write to file
-        write_geo(self.p['f_disp'], self.interface_f)
+        write_geo(self.p['f_disp'] + '.vtp', self.interface_f)
 
         # write general bc file
-        with open('interface_displacement.dat', 'w') as f:
+        with open(self.p['f_disp'] + '.dat', 'w') as f:
             f.write('3 2 ' + str(len(self.sol['disp'])) + '\n')
             f.write('0.0\n')
             f.write('1.0\n')
@@ -513,17 +520,17 @@ class FSG(svFSI):
                 f.write('\n')
 
         # archive
-        shutil.copyfile(self.p['f_disp'], os.path.join('fsg', 'disp_' + str(i).zfill(3) + '.vtp'))
+        shutil.copyfile(self.p['f_disp'] + '.vtp', os.path.join(self.p['root'], 'disp_' + str(i).zfill(3) + '.vtp'))
 
     def apply_disp(self, i):
         if self.p['fluid'] == 'fsi':
             # get mesh displacement solution
             src = str(self.p['n_procs']['mesh']) + '-procs/mesh_' + str(self.p['n_max']['mesh']).zfill(3) + '.vtu'
-            f_out = 'fsg/fluid.vtu'
+            f_out = self.p['root'] + '/fluid.vtu'
         elif self.p['fluid'] == 'poiseuille':
             # get (relaxed) displacement from g&r solution
-            src = self.p['f_disp']
-            f_out = 'fsg/fluid_' + str(i + 1).zfill(3) + '.vtp'
+            src = self.p['f_disp'] + '.vtp'
+            f_out = self.p['root'] + '/fluid_' + str(i + 1).zfill(3) + '.vtp'
         else:
             raise ValueError('Unknown fluid option ' + self.p['fluid'])
 
@@ -537,14 +544,14 @@ class FSG(svFSI):
 
         # archive
         if self.p['fluid'] == 'fsi':
-            shutil.copyfile(src, 'fsg/mesh_' + str(i).zfill(3) + '.vtu')
+            shutil.copyfile(src, self.p['root'] + '/mesh_' + str(i).zfill(3) + '.vtu')
         elif self.p['fluid'] == 'poiseuille':
-            shutil.copyfile(f_out, 'fsg/mesh_' + str(i).zfill(3) + '.vtp')
+            shutil.copyfile(f_out, self.p['root'] + '/mesh_' + str(i).zfill(3) + '.vtp')
 
     def post_wss(self, i):
         if self.p['fluid'] == 'fsi':
             # read fluid solution
-            trg = 'fsg/fluid_' + str(i).zfill(3) + '.vtu'
+            trg = self.p['root'] + '/fluid_' + str(i).zfill(3) + '.vtu'
             res = read_geo(trg)
 
             # calculate velocity magnitude
@@ -563,7 +570,7 @@ class FSG(svFSI):
             norm.Update()
 
             # calculate wss
-            calc2 = calculator(norm, '0.04*abs(Gradients.Normals)', ['Gradients', 'Normals'], 'WSS')
+            calc2 = calculator(norm, '0.04*abs(dot(Gradients,Normals))', ['Gradients', 'Normals'], 'WSS')
 
             # average onto cells
             p2c = vtk.vtkPointDataToCellData()
@@ -595,7 +602,7 @@ class FSG(svFSI):
             write_geo(trg, res.GetOutput())
         elif self.p['fluid'] == 'poiseuille':
             # read deformed interface
-            res = read_geo('fsg/fluid_' + str(i).zfill(3) + '.vtp')
+            res = read_geo(self.p['root'] + '/fluid_' + str(i).zfill(3) + '.vtp')
 
             # mesh points
             points = v2n(res.GetOutput().GetPoints().GetData())
@@ -610,7 +617,7 @@ class FSG(svFSI):
             array = n2v(wss_f)
             array.SetName('WSS Python')
             self.interface_f.GetPointData().AddArray(array)
-            write_geo(os.path.join('fsg', 'wss_' + str(i).zfill(3) + '.vtp'), self.interface_f)
+            write_geo(os.path.join(self.p['root'], 'wss_' + str(i).zfill(3) + '.vtp'), self.interface_f)
         else:
             raise ValueError('Unknown fluid option ' + self.p['fluid'])
 
@@ -643,14 +650,14 @@ class FSG(svFSI):
         solid.GetPointData().AddArray(array)
 
         # write to file
-        write_geo('fsg/solid.vtu', solid)
+        write_geo(self.p['root'] + '/solid.vtu', solid)
 
         # archive
-        shutil.copyfile('fsg/solid.vtu', os.path.join('fsg', 'wss_' + str(i).zfill(3) + '.vtu'))
+        shutil.copyfile(self.p['root'] + '/solid.vtu', os.path.join(self.p['root'], 'wss_' + str(i).zfill(3) + '.vtu'))
 
     def set_time(self, t):
         # read solid mesh
-        f = 'fsg/solid.vtu'
+        f = self.p['root'] + '/solid.vtu'
         n = 'varWallProps'
         solid = read_geo(f).GetOutput()
 
