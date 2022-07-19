@@ -31,6 +31,8 @@ from cylinder import generate_mesh
 
 if platform.system() == 'Darwin':
     usr = '/Users/pfaller/'
+elif platform.system() == 'Linux':
+    usr = '/home/pfaller/'
 
 # from https://github.com/StanfordCBCL/DataCuration
 sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
@@ -55,7 +57,7 @@ class svFSI(Simulation):
         self.fields = ['fluid', 'solid', 'mesh', 'fsi']
         for f in self.fields + [self.p['root']]:
             if f is not self.p['root']:
-                f = str(self.p['n_procs_' + f]) + '-procs'
+                f = str(self.p['n_procs'][f]) + '-procs'
             if os.path.exists(f) and os.path.isdir(f):
                 shutil.rmtree(f)
 
@@ -68,22 +70,26 @@ class svFSI(Simulation):
         self.initialize_mesh()
 
         # intialize fluid/solid interface meshes
+        self.tube = read_geo(glob.glob('mesh_tube_fsi/tube_*.vtu')[0]).GetOutput()
         self.interface_f = read_geo('mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp').GetOutput()
         self.interface_s = read_geo('mesh_tube_fsi/solid/mesh-surfaces/interface.vtp').GetOutput()
+        self.vol_f = read_geo('mesh_tube_fsi/fluid/mesh-complete.mesh.vtu').GetOutput()
+        self.vol_s = read_geo('mesh_tube_fsi/solid/mesh-complete.mesh.vtu').GetOutput()
 
-        self.nodes_s = v2n(self.interface_s.GetPointData().GetArray('GlobalNodeID'))
         self.nodes_f = v2n(self.interface_f.GetPointData().GetArray('GlobalNodeID'))
+        self.nodes_s = v2n(self.interface_s.GetPointData().GetArray('GlobalNodeID'))
 
+        self.points_tube = v2n(self.tube.GetPoints().GetData())
         self.points_f = v2n(self.interface_f.GetPoints().GetData())
         self.points_s = v2n(self.interface_s.GetPoints().GetData())
+        self.points_vol_f = v2n(self.vol_f.GetPoints().GetData())
+        self.points_vol_s = v2n(self.vol_s.GetPoints().GetData())
 
-        # map fluid mesh to solid mesh
-        tree = scipy.spatial.KDTree(self.points_s)
-        _, self.i_fs = tree.query(self.points_f)
-
-        # map solid mesh to fluid mesh
-        tree = scipy.spatial.KDTree(self.points_f)
-        _, self.i_sf = tree.query(self.points_s)
+        # map nodes
+        self.i_fs = map_ids(self.points_f, self.points_s)
+        self.i_sf = map_ids(self.points_s, self.points_f)
+        self.i_vol_f = map_ids(self.points_vol_f, self.points_tube)
+        self.i_vol_s = map_ids(self.points_vol_s, self.points_tube)
 
         # time stamp
         ct = str(datetime.datetime.now()).replace(' ', '_').replace(':', '-')
@@ -128,8 +134,9 @@ class svFSI(Simulation):
         exe = 'mpirun -np'
         for k in ['n_procs', 'exe', 'inp']:
             exe += ' ' + str(self.p[k][name])
-        with open(os.path.join('fsg', name + '_' + str(i).zfill(3) + '.log'), 'w') as f:
+        with open(os.path.join(self.p['root'], name + '_' + str(i).zfill(3) + '.log'), 'w') as f:
             if self.p['debug']:
+                print(exe)
                 subprocess.run(shlex.split(exe))
             else:
                 subprocess.run(shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL)
@@ -148,11 +155,11 @@ class FSG(svFSI):
         # run simulation
         self.main()
 
-        # archive results
-        self.archive()
-        
         # plot convergence
         self.plot_convergence()
+
+        # archive results
+        self.archive()
 
     def set_params(self):
         # debug mode?
@@ -163,7 +170,7 @@ class FSG(svFSI):
 
         # define file paths
         self.p['exe'] = {'fluid': usr + '/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI',
-                         'solid': usr + '/work/repos/svFSI_direct/build/svFSI-build/bin/svFSI'}
+                         'solid': usr + '/work/repos/svFSI_fork/build/svFSI-build/bin/svFSI'}
         self.p['exe']['mesh'] = self.p['exe']['fluid']
         self.p['exe']['fsi'] = self.p['exe']['solid']
 
@@ -171,15 +178,15 @@ class FSG(svFSI):
         self.p['inp'] = {'fluid': 'steady_flow.inp', 'solid': 'gr_restart.inp', 'mesh': 'mesh.inp', 'fsi': 'fsi.inp'}
 
         # number of processors
-        self.p['n_procs'] = {'fluid': 1, 'solid': 1, 'mesh': 10, 'fsi': 10}
+        self.p['n_procs'] = {'solid': 1, 'fluid': 4, 'mesh': 8, 'fsi': 10}
 
         # maximum number of time steps
-        self.p['n_max'] = {'fluid': 20, 'mesh': 5, 'fsi': 100}
+        self.p['n_max'] = {'fluid': 10, 'mesh': 10, 'fsi': 100}
 
         # interface loads
         self.p['f_load_pressure'] = 'interface_pressure.vtp'
         self.p['f_load_wss'] = 'interface_wss.vtp'
-        self.p['f_disp'] = 'interface_displacement' # vtp and dat
+        self.p['f_disp'] = 'interface_displacement'
 
         # homeostatic pressure
         self.p['p0'] = 13.9868
@@ -188,7 +195,7 @@ class FSG(svFSI):
         self.p['q0'] = 0.1
 
         # coupling tolerance
-        self.p['coup_tol'] = 1.0e-3
+        self.p['coup_tol'] = 1.0e-2
 
         # maximum number of coupling iterations
         self.p['coup_imax'] = 100
@@ -248,6 +255,10 @@ class FSG(svFSI):
                 out += '\tomega ' + '{:.2e}'.format(self.p['coup_omega'])
                 print(out)
 
+                # combine meshes
+                if self.p['fluid'] == 'fsi':
+                    self.combined_vtu(i)
+
                 # check if coupling converged
                 if np.all(np.array([e[-1][-1] for e in self.err.values()]) < self.p['coup_tol']):
                     # save converged steps
@@ -263,13 +274,17 @@ class FSG(svFSI):
                 print('\tcoupling unconverged')
 
     def plot_convergence(self):
-        fields = ['disp', 'press', 'wss', 'r']
+        fields = ['disp', 'wss']
+        colors = ['b', 'r']
 
-        fig, ax = plt.subplots(1, len(fields), figsize=(40, 10), dpi=200)
-        for i, name in enumerate(fields):
+        # fig, ax = plt.subplots(1, len(fields), figsize=(40, 10), dpi=200)
+        fig, ax1 = plt.subplots(figsize=(40, 10), dpi=200)
+        ax = [ax1, ax1.twinx()]
+        for i, (name, col) in enumerate(zip(fields, colors)):
             ax[i].set_xlabel('sub-iteration $n$')
             ax[i].xaxis.set_major_locator(MaxNLocator(integer=True))
-            ax[i].set_ylabel(name)
+            ax[i].set_ylabel(name, color=col)
+            ax[i].tick_params(axis='y', colors=col)
             ax[i].grid(True)
             if name == 'r':
                 ax[i].set_yscale('log')
@@ -280,7 +295,7 @@ class FSG(svFSI):
                         plot += [np.mean(rad(v))]
                     else:
                         plot += [np.mean(v)]
-            ax[i].plot(plot, linestyle='-')#, marker='o'
+            ax[i].plot(plot, linestyle='-', color=col)#, marker='o'
         fig.savefig(os.path.join(self.p['f_out'], 'convergence.png'), bbox_inches='tight')
         plt.show()
         plt.close(fig)
@@ -289,6 +304,10 @@ class FSG(svFSI):
         # move results
         shutil.move(self.p['root'], os.path.join(self.p['f_out'], self.p['root']))
         shutil.move('mesh_tube_fsi', os.path.join(self.p['f_out'], 'mesh_tube_fsi'))
+
+        # save stored results
+        file_name = os.path.join(self.p['f_out'], 'solution.json')
+        np.save(file_name, self.log)
 
         # save parameters
         self.save_params(self.p['root'] + '.json')
@@ -364,7 +383,7 @@ class FSG(svFSI):
             self.step('fluid', i)
 
             # step 1.5: fsi update
-            self.step('fsi', i)
+            # self.step('fsi', i)
             self.project_f2s(i)
         if self.sol['wss'] is None or self.sol['press'] is None:
             return
@@ -428,10 +447,10 @@ class FSG(svFSI):
         self.log[name][-1].append(vec_relax)
 
         # calculate error norm
-        if i == 1:
+        if i == 1 or ini:
             err = 1.0
         else:
-            err = abs(np.linalg.norm(vec_relax) / np.linalg.norm(self.sol[name]) - 1.0)
+            err = np.linalg.norm(vec_m0 - self.sol[name]) / np.linalg.norm(self.sol[name])
         self.err[name][-1].append(err)
 
         # update solution
@@ -462,8 +481,11 @@ class FSG(svFSI):
         res = read_geo(trg).GetOutput()
 
         # read from fluid mesh
-        n = 'Pressure'
-        res_f = v2n(res.GetPointData().GetArray(n))
+        res_f = v2n(res.GetPointData().GetArray('Pressure'))
+
+        # archive
+        self.sol['press_vol'] = res_f
+        self.sol['velo_vol'] = v2n(res.GetPointData().GetArray('Velocity'))
 
         # map onto solid mesh
         self.sol['press'] = res_f[self.nodes_f - 1][self.i_fs]
@@ -481,8 +503,10 @@ class FSG(svFSI):
         res = read_geo(trg).GetOutput()
 
         # read from solid mesh
-        n = 'Displacement'
-        res_s = v2n(res.GetPointData().GetArray(n))
+        res_s = v2n(res.GetPointData().GetArray('Displacement'))
+
+        # archive
+        self.sol['disp_vol_solid'] = res_s
 
         # map onto fluid mesh
         self.sol['disp'] = res_s[self.nodes_s - 1][self.i_sf]
@@ -543,6 +567,7 @@ class FSG(svFSI):
         write_geo(f_out, warp.GetOutput())
 
         # archive
+        self.sol['disp_vol_fluid'] = v2n(res.GetPointData().GetArray('Displacement'))
         if self.p['fluid'] == 'fsi':
             shutil.copyfile(src, self.p['root'] + '/mesh_' + str(i).zfill(3) + '.vtu')
         elif self.p['fluid'] == 'poiseuille':
@@ -626,31 +651,25 @@ class FSG(svFSI):
         _, i_ws = tree.query(self.points_s)
         wss_is = wss_f[i_ws]
 
-        # read solid mesh
-        solid = read_geo('mesh_tube_fsi/solid/mesh-complete.mesh.vtu').GetOutput()
-
         # get wall properties
-        props = v2n(solid.GetPointData().GetArray('varWallProps'))
+        props = v2n(self.vol_s.GetPointData().GetArray('varWallProps'))
 
         # interpolate wss to solid mesh
         wss = scipy.interpolate.griddata(props[self.nodes_s - 1][:, 1:3], wss_is, (props[:, 1], props[:, 2]))
         self.sol['wss'] = wss
 
     def write_wss(self, i):
-        # read solid mesh
-        solid = read_geo('mesh_tube_fsi/solid/mesh-complete.mesh.vtu').GetOutput()
-
         # get wall properties
-        props = v2n(solid.GetPointData().GetArray('varWallProps'))
+        props = v2n(self.vol_s.GetPointData().GetArray('varWallProps'))
         props[:, 6] = self.sol['wss']
 
         # create VTK array
         array = n2v(props)
         array.SetName('varWallProps')
-        solid.GetPointData().AddArray(array)
+        self.vol_s.GetPointData().AddArray(array)
 
         # write to file
-        write_geo(self.p['root'] + '/solid.vtu', solid)
+        write_geo(self.p['root'] + '/solid.vtu', self.vol_s)
 
         # archive
         shutil.copyfile(self.p['root'] + '/solid.vtu', os.path.join(self.p['root'], 'wss_' + str(i).zfill(3) + '.vtu'))
@@ -673,11 +692,51 @@ class FSG(svFSI):
         # write to file
         write_geo(f, solid)
 
+    def combined_vtu(self, i):
+        # displacements
+        disp = np.zeros((self.tube.GetNumberOfPoints(), 3))
+        disp[self.i_vol_f] = self.sol['disp_vol_fluid']
+        disp[self.i_vol_s] = self.sol['disp_vol_solid']
+        array = n2v(disp)
+        array.SetName('Displacement')
+        self.tube.GetPointData().AddArray(array)
+
+        # wss
+        wss = np.ones(self.tube.GetNumberOfPoints()) * np.nan
+        wss[self.i_vol_s] = self.sol['wss']
+        array = n2v(wss)
+        array.SetName('WSS')
+        self.tube.GetPointData().AddArray(array)
+
+        # pressure
+        press = np.ones(self.tube.GetNumberOfPoints()) * np.nan
+        press[self.i_vol_f] = self.sol['press_vol']
+        array = n2v(press)
+        array.SetName('Pressure')
+        self.tube.GetPointData().AddArray(array)
+
+        # velocity
+        velo = np.ones((self.tube.GetNumberOfPoints(), 3)) * np.nan
+        velo[self.i_vol_f] = self.sol['velo_vol']
+        array = n2v(velo)
+        array.SetName('Velocity')
+        self.tube.GetPointData().AddArray(array)
+
+        # archive
+        write_geo(os.path.join(self.p['root'], 'tube_' + str(i).zfill(3) + '.vtu'), self.tube)
+
 
 def rad(x):
     sign = - (x[:, 0] < 0.0).astype(int)
     sign += (x[:, 0] > 0.0).astype(int)
     return sign * np.sqrt(x[:, 0]**2 + x[:, 1]**2)
+
+
+# todo: this could be done easier with GlobalNodeID
+def map_ids(src, trg):
+    tree = scipy.spatial.KDTree(trg)
+    _, res = tree.query(src)
+    return res
 
 
 if __name__ == '__main__':
