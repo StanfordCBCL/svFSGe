@@ -156,7 +156,10 @@ class FSG(svFSI):
         self.main()
 
         # plot convergence
-        self.plot_convergence()
+        try:
+            self.plot_convergence()
+        except:
+            pass
 
         # archive results
         self.archive()
@@ -178,7 +181,7 @@ class FSG(svFSI):
         self.p['inp'] = {'fluid': 'steady_flow.inp', 'solid': 'gr_restart.inp', 'mesh': 'mesh.inp', 'fsi': 'fsi.inp'}
 
         # number of processors
-        self.p['n_procs'] = {'solid': 1, 'fluid': 4, 'mesh': 8, 'fsi': 10}
+        self.p['n_procs'] = {'solid': 1, 'fluid': 10, 'mesh': 10, 'fsi': 10}
 
         # maximum number of time steps
         self.p['n_max'] = {'fluid': 10, 'mesh': 10, 'fsi': 100}
@@ -195,7 +198,7 @@ class FSG(svFSI):
         self.p['q0'] = 0.1
 
         # coupling tolerance
-        self.p['coup_tol'] = 1.0e-2
+        self.p['coup_tol'] = 1.0e-3
 
         # maximum number of coupling iterations
         self.p['coup_imax'] = 100
@@ -415,6 +418,10 @@ class FSG(svFSI):
 
         # compute relaxation constant
         # self.coup_aitken()
+
+        # for archiving
+        self.coup_relax('disp_vol_solid', i, ini)
+        # self.coup_relax('press_vol', i, ini)
 
     def coup_relax(self, name, i, ini):
         if i == 1:
@@ -693,34 +700,26 @@ class FSG(svFSI):
         write_geo(f, solid)
 
     def combined_vtu(self, i):
-        # displacements
+        # displacements (fluid and solid)
         disp = np.zeros((self.tube.GetNumberOfPoints(), 3))
         disp[self.i_vol_f] = self.sol['disp_vol_fluid']
         disp[self.i_vol_s] = self.sol['disp_vol_solid']
-        array = n2v(disp)
-        array.SetName('Displacement')
-        self.tube.GetPointData().AddArray(array)
+        add_array(self.tube, disp, 'Displacement')
 
-        # wss
+        # wss (solid only)
         wss = np.ones(self.tube.GetNumberOfPoints()) * np.nan
         wss[self.i_vol_s] = self.sol['wss']
-        array = n2v(wss)
-        array.SetName('WSS')
-        self.tube.GetPointData().AddArray(array)
+        add_array(self.tube, wss, 'WSS')
 
-        # pressure
+        # pressure (fluid only)
         press = np.ones(self.tube.GetNumberOfPoints()) * np.nan
         press[self.i_vol_f] = self.sol['press_vol']
-        array = n2v(press)
-        array.SetName('Pressure')
-        self.tube.GetPointData().AddArray(array)
+        add_array(self.tube, press, 'Pressure')
 
-        # velocity
+        # velocity (fluid only)
         velo = np.ones((self.tube.GetNumberOfPoints(), 3)) * np.nan
         velo[self.i_vol_f] = self.sol['velo_vol']
-        array = n2v(velo)
-        array.SetName('Velocity')
-        self.tube.GetPointData().AddArray(array)
+        add_array(self.tube, velo, 'Velocity')
 
         # archive
         write_geo(os.path.join(self.p['root'], 'tube_' + str(i).zfill(3) + '.vtu'), self.tube)
@@ -730,6 +729,12 @@ def rad(x):
     sign = - (x[:, 0] < 0.0).astype(int)
     sign += (x[:, 0] > 0.0).astype(int)
     return sign * np.sqrt(x[:, 0]**2 + x[:, 1]**2)
+
+
+def add_array(geo, num, name):
+    array = n2v(num)
+    array.SetName(name)
+    geo.GetPointData().AddArray(array)
 
 
 # todo: this could be done easier with GlobalNodeID
