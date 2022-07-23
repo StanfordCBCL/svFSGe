@@ -7,15 +7,15 @@ Number of time steps: 1
 Time step size: 1.0
 
 Save results to VTK format: 1
-Name prefix of saved VTK files: gr
+Name prefix of saved VTK files: gr_restart
 Increment in saving VTK files: 1
 Start saving after time step: 1
+Save results in folder: gr_restart
 
 Increment in saving restart files: 1
 
 Overwrite restart file: 0
-Restart file name: gr
-Save results in folder: 1-procs
+#Restart file name: gr
 
 Verbose: 1
 Warning: 0

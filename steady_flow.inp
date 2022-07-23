@@ -4,7 +4,7 @@
 Continue previous simulation: 0
 Number of spatial dimensions: 3
 Number of time steps: 20
-Time step size: 0.2
+Time step size: 0.1
 
 #Simulation initialization file path: fluid/mesh.vtu
 
