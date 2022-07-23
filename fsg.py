@@ -15,6 +15,7 @@ import vtk
 import json
 import platform
 import glob
+from copy import deepcopy
 from collections import defaultdict
 
 import scipy.interpolate
@@ -103,12 +104,12 @@ class FSG(svFSI):
         self.p['coup_imax'] = 100
 
         # relaxation constant
-        exp = 2
+        exp = 1
         self.p['coup_omega0'] = 1/2**exp
         self.p['coup_omega'] = self.p['coup_omega0']
 
         # maximum number of G&R time steps (excluding prestress)
-        self.p['nmax'] = 20
+        self.p['nmax'] = 10
 
         # maximum load factor
         self.p['fmax'] = 1.0
@@ -127,18 +128,13 @@ class FSG(svFSI):
                 # count total iterations (load + sub-iterations)
                 i += 1
 
-                # update simulation
-                # self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'vol')
-                # self.initialize_fluid(self.p['p0'] * fp, self.p['q0'], 'interface')
-                self.set_fluid(self.p['q0'], self.p['p0'] * fp)
-
                 # store current load
                 if n == 0:
                     self.log['load'].append([])
                 self.log['load'][-1].append(fp)
 
                 # perform coupling step
-                self.coup_step(i, t, n == 0)
+                self.coup_step(i, t, n)
 
                 # check if simulation failed
                 for name, s in self.curr.sol.items():
@@ -209,44 +205,27 @@ class FSG(svFSI):
         # save parameters
         self.save_params(self.p['root'] + '.json')
 
-    # def initialize_mesh(self):
-    #     # initial fluid mesh (zero displacements)
-    #     for f in ['fluid', 'solid']:
-    #         shutil.copyfile('mesh_tube_fsi/' + f + '/mesh-complete.mesh.vtu', self.p['root'] + '/' + f + '.vtu')
-    #
-    #     # initialize with zero displacements
-    #     names_in = [self.p['root'] + '/fluid.vtu', self.p['root'] + '/solid.vtu']
-    #     names_out = ['mesh_' + str(self.p['n_max']['mesh']).zfill(3) + '.vtu', 'gr_000.vtu']
-    #     dirs_out = [str(self.p['n_procs']['mesh']) + '-procs', str(self.p['n_procs']['solid']) + '-procs']
-    #     for n_in, n_out, d_out in zip(names_in, names_out, dirs_out):
-    #         geo = read_geo(n_in).GetOutput()
-    #         array = n2v(np.zeros((geo.GetNumberOfPoints(), 3)))
-    #         array.SetName('Displacement')
-    #         geo.GetPointData().AddArray(array)
-    #
-    #         os.makedirs(d_out, exist_ok=True)
-    #         write_geo(os.path.join(d_out, n_out), geo)
-    #
-    #     shutil.copyfile('mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp', self.p['root'] + '/wss_000.vtp')
-
-    def coup_step(self, i, t, ini):
+    def coup_step(self, i, t, n):
         # copy previous solution
-        self.prev.sol = self.curr.sol.copy()
+        self.prev.sol = deepcopy(self.curr.sol)
 
         # # reset solution
         # self.curr.reset()
 
         # predict solution for new time step
-        if ini:
+        if n == 0:
             self.coup_predict(i, t)
 
         # step 1: fluid update
         if self.p['fluid'] == 'fsi':
+            self.set_fluid(self.p['q0'], self.p['p0'] * fp)
             self.step('fluid', i)
         elif self.p['fluid'] == 'poiseuille':
-            self.poiseuille(self.p['p0'], self.p['q0'])
+            self.poiseuille(self.p['q0'], self.p['p0'])
         if not self.curr.check(['wss', 'press']):
             return
+        print(np.linalg.norm(self.curr.get(('fluid', 'wss', 'int'))))
+        print(np.linalg.norm(self.curr.sol['disp']))
 
         # relax pressure update
         # self.coup_relax('fluid', 'press', i, t, ini)
@@ -259,9 +238,11 @@ class FSG(svFSI):
         self.step('solid', i)
         if not self.curr.check(['disp']):
             return
+        print(np.linalg.norm(self.curr.sol['disp']))
 
         # relax displacement update
-        self.coup_relax('solid', 'disp', i, t, ini)
+        self.coup_relax('solid', 'disp', i, t, n)
+        # print(np.linalg.norm(self.curr.sol['disp']))
 
         # step 3: deform mesh
         if self.p['fluid'] == 'fsi':
@@ -276,35 +257,48 @@ class FSG(svFSI):
             # zero displacements
             self.curr.init('disp')
         else:
-            # solution of converged last load step
-            vec_m0 = self.log['disp'][-1][-1]
-            # if ini and len(self.log[name]) > 2:
-            #     # quadratically extrapolate from previous two load increments
-            #     vec_m1 = self.log[name][-2][-1]
-            #     vec_m2 = self.log[name][-3][-1]
-            #     vec_relax = 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
-            # elif ini and len(self.log[name]) > 1:
-            #     # linearly extrapolate from previous load increment
-            #     vec_m1 = self.log[name][-2][-1]
-            #     vec_relax = 2.0 * vec_m0 - vec_m1
+            # curr = self.curr.get(('solid', 'disp', 'vol'))
+            # prev = self.prev.get(('solid', 'disp', 'vol'))
+            # # solution of converged last load step
+            # # vec_m0 = self.log['disp'][-1][-1]
+            # # if ini and len(self.log[name]) > 2:
+            # #     # quadratically extrapolate from previous two load increments
+            # #     vec_m1 = self.log[name][-2][-1]
+            # #     vec_m2 = self.log[name][-3][-1]
+            # #     vec_relax = 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
+            # # elif ini and len(self.log[name]) > 1:
+            # #     # linearly extrapolate from previous load increment
+            # #     vec_m1 = self.log[name][-2][-1]
+            # vec_relax = 2.0 * curr - prev
+            # self.curr.add(('solid', 'disp', 'vol'), vec_relax)
+
+            # solution from poiseuille solution
             f = 'gr/gr_' + str(t + 1).zfill(3) + '.vtu'
+            # pdb.set_trace()
             geo = read_geo(f).GetOutput()
             self.curr.add(('solid', 'disp', 'vol'), v2n(geo.GetPointData().GetArray('Displacement')))
 
-    def coup_relax(self, domain, name, i, t, ini):
-        curr = self.curr.get((domain, name, 'vol'))
-        prev = self.prev.get((domain, name, 'vol'))
-        if i == 1 or ini:
+    def coup_relax(self, domain, name, i, t, n):
+        curr = deepcopy(self.curr.get((domain, name, 'vol')))
+        prev = deepcopy(self.prev.get((domain, name, 'vol')))
+        if i == 1 or n == 0:
             # first step: no old solution
             vec_relax = curr
             err = 1.0
         else:
             # damp with previous iteration
             vec_relax = self.p['coup_omega'] * curr + (1.0 - self.p['coup_omega']) * prev
-            err = np.linalg.norm(prev - curr) / np.linalg.norm(curr)
+
+            if t == 0:
+                # normalize w.r.t. mean radius
+                norm = np.mean(rad(self.points[('vol', 'solid')]))
+            else:
+                # normalize w.r.t. displacement norm
+                norm = np.linalg.norm(curr)
+            err = np.linalg.norm(prev - curr) / norm
 
         # start a new sub-list for new load step
-        if ini:
+        if n == 0:
             self.log[name + '_new'].append([])
             self.log[name].append([])
             self.err[name].append([])

@@ -12,6 +12,7 @@ import scipy
 import shlex
 import subprocess
 import numpy as np
+from copy import deepcopy
 from collections import defaultdict
 
 from vtk.util.numpy_support import vtk_to_numpy as v2n
@@ -108,7 +109,7 @@ class svFSI(Simulation):
             self.maps[m] = map_ids(self.points[m[0]], self.points[m[1]])
         return self.maps[m]
 
-    def set_fluid(self, p, q):
+    def set_fluid(self, q, p):
         # set bc pressure
         with open('steady_pressure.dat', 'w') as f:
             f.write('2 1\n')
@@ -191,15 +192,18 @@ class svFSI(Simulation):
         if domain == 'solid':
             # read current iteration
             fields = ['disp']
+            phys = domain
             assert i is not None
             src = fname + str(i).zfill(3) + '.vtu'
         elif domain == 'fluid':
             # read converged steady state flow
             fields = ['velo', 'wss', 'press']
+            phys = domain
             src = fname + str(self.p['n_max']['fluid']).zfill(3) + '.vtu'
         elif domain == 'mesh':
             # read fully displaced mesh
             fields = ['disp']
+            phys = 'fluid'
             src = fname + str(self.p['n_max']['mesh']).zfill(3) + '.vtu'
         else:
             raise ValueError('Unknown domain ' + domain)
@@ -214,14 +218,14 @@ class svFSI(Simulation):
 
             # extract fields
             for f in fields:
-                self.curr.add((domain, f, 'vol'), v2n(res.GetPointData().GetArray(sv_names[f])))
+                self.curr.add((phys, f, 'vol'), v2n(res.GetPointData().GetArray(sv_names[f])))
 
-    def poiseuille(self, p, q):
+    def poiseuille(self, q, p):
         # fluid mesh points
-        points_f = self.points[('vol', 'fluid')] + self.curr.get(('fluid', 'disp', 'vol'))
+        points_f = deepcopy(self.points[('vol', 'fluid')]) + deepcopy(self.curr.get(('fluid', 'disp', 'vol')))
 
         # normalized axial coordinate
-        ax = points_f[:, 2].copy()
+        ax = deepcopy(points_f[:, 2])
         amax = np.max(ax)
         ax /= amax
 
@@ -245,8 +249,12 @@ class svFSI(Simulation):
         # points on fluid interface
         map_int = self.map((('int', 'fluid'), ('vol', 'fluid')))
 
-        # calculate wss from const Poiseuille flow (assume q = q0 = const)
-        wss = 4.0 * 0.04 / np.pi / rad[map_int] ** 3.0
+        # make sure wss is nonzero even for q=0 (only ratio is important for g&r)
+        if q == 0.0:
+            q = 1.0
+
+        # calculate wss from const Poiseuille flow
+        wss = 4.0 * 0.04 * q / np.pi / rad[map_int] ** 3.0
         self.curr.add(('fluid', 'wss', 'int'), wss)
 
 
@@ -300,13 +308,13 @@ class Solution:
 
         map_v = self.sim.map(((p, d), ('vol', 'tube')))
         if f in ['disp', 'velo', 'press']:
-            self.sol[f][map_v] = sol
+            self.sol[f][map_v] = deepcopy(sol)
         elif f == 'wss':
             # wss is assigned in fluid and mapped to solid (constant in radial direction)
             assert d == 'fluid'
 
             # wss in fluid volume
-            self.sol[f][map_v] = sol
+            self.sol[f][map_v] = deepcopy(sol)
 
             # wss at fluid interface
             sol_int = self.sol[f][self.sim.map((('int', 'fluid'), ('vol', 'tube')))]
