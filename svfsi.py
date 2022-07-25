@@ -4,7 +4,6 @@ import pdb
 import vtk
 import os
 import sys
-import glob
 import shutil
 import datetime
 import platform
@@ -62,7 +61,7 @@ class svFSI(Simulation):
         os.makedirs(os.path.join(self.p['root'], 'converged'))
 
         # generate and initialize mesh
-        generate_mesh()
+        mesh_name = generate_mesh()
         # self.initialize_mesh()
 
         # intialize meshes
@@ -70,7 +69,7 @@ class svFSI(Simulation):
         for d in ['fluid', 'solid']:
             self.mesh[('int', d)] = read_geo('mesh_tube_fsi/' + d + '/mesh-surfaces/interface.vtp').GetOutput()
             self.mesh[('vol', d)] = read_geo('mesh_tube_fsi/' + d + '/mesh-complete.mesh.vtu').GetOutput()
-        self.mesh[('vol', 'tube')] = read_geo(glob.glob('mesh_tube_fsi/tube_*.vtu')[0]).GetOutput()
+        self.mesh[('vol', 'tube')] = read_geo('mesh_tube_fsi/' + mesh_name).GetOutput()
 
         # read points
         self.points = {}
@@ -184,21 +183,22 @@ class svFSI(Simulation):
                 subprocess.run(shlex.split(exe))
             else:
                 subprocess.run(shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL)
+
+        # read and store results
         self.post(name, i)
 
     def post(self, domain, i=None):
         out = self.p['out'][domain]
         fname = os.path.join(out, out + '_')
+        phys = domain
         if domain == 'solid':
             # read current iteration
             fields = ['disp']
-            phys = domain
             assert i is not None
             src = fname + str(i).zfill(3) + '.vtu'
         elif domain == 'fluid':
             # read converged steady state flow
             fields = ['velo', 'wss', 'press']
-            phys = domain
             src = fname + str(self.p['n_max']['fluid']).zfill(3) + '.vtu'
         elif domain == 'mesh':
             # read fully displaced mesh
@@ -291,14 +291,13 @@ class Solution:
         for f in fields:
             if self.sol[f] is None:
                 return False
-        else:
-            return True
+        return True
 
     def init(self, f):
-        self.sol[f] = self.zero[f]
+        self.sol[f] = deepcopy(self.zero[f])
 
     def add(self, kind, sol):
-        # fluid, solid
+        # fluid, solid, tube
         # disp, velo, wss, press
         # vol, int
         d, f, p = kind
@@ -310,25 +309,21 @@ class Solution:
         if f in ['disp', 'velo', 'press']:
             self.sol[f][map_v] = deepcopy(sol)
         elif f == 'wss':
-            # wss is assigned in fluid and mapped to solid (constant in radial direction)
-            assert d == 'fluid'
-
-            # wss in fluid volume
+            # wss in tube volume
             self.sol[f][map_v] = deepcopy(sol)
 
             # wss at fluid interface
             sol_int = self.sol[f][self.sim.map((('int', 'fluid'), ('vol', 'tube')))]
 
-            # wss in solid volume
+            # wss in solid volume (assume wss is constant radially)
             map_src = self.sim.map((('vol', 'solid'), ('int', 'fluid')))
             map_trg = self.sim.map((('vol', 'solid'), ('vol', 'tube')))
-            self.sol[f][map_trg] = sol_int[map_src]
-
+            self.sol[f][map_trg] = deepcopy(sol_int[map_src])
         else:
             raise ValueError(f + ' not in fields ' + self.fields)
 
     def get(self, kind):
-        # fluid, solid
+        # fluid, solid, tube
         # disp, velo, wss, press
         # vol, int
         d, f, p = kind
@@ -336,7 +331,7 @@ class Solution:
             raise ValueError('no solution ' + ','.join(kind))
 
         map_s = self.sim.map(((p, d), ('vol', 'tube')))
-        return self.sol[f][map_s]
+        return deepcopy(self.sol[f][map_s])
 
     def archive(self, fname, i):
         geo = self.sim.mesh[('vol', 'tube')]
