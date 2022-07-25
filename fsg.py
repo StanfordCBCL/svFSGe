@@ -98,18 +98,18 @@ class FSG(svFSI):
         self.p['q0'] = 0
 
         # coupling tolerance
-        self.p['coup_tol'] = 1.0e-3
+        self.p['coup_tol'] = 1.0e-2
 
         # maximum number of coupling iterations
         self.p['coup_imax'] = 100
 
         # relaxation constant
-        exp = 1
+        exp = 2
         self.p['coup_omega0'] = 1/2**exp
         self.p['coup_omega'] = self.p['coup_omega0']
 
         # maximum number of G&R time steps (excluding prestress)
-        self.p['nmax'] = 10
+        self.p['nmax'] = 20
 
         # maximum load factor
         self.p['fmax'] = 1.0
@@ -209,12 +209,9 @@ class FSG(svFSI):
         # copy previous solution
         self.prev.sol = deepcopy(self.curr.sol)
 
-        # # reset solution
-        # self.curr.reset()
-
         # predict solution for new time step
         if n == 0:
-            self.coup_predict(i, t)
+            self.curr.add(('solid', 'disp', 'vol'), self.coup_predict())
 
         # step 1: fluid update
         if self.p['fluid'] == 'fsi':
@@ -224,8 +221,6 @@ class FSG(svFSI):
             self.poiseuille(self.p['q0'], self.p['p0'])
         if not self.curr.check(['wss', 'press']):
             return
-        print(np.linalg.norm(self.curr.get(('fluid', 'wss', 'int'))))
-        print(np.linalg.norm(self.curr.sol['disp']))
 
         # relax pressure update
         # self.coup_relax('fluid', 'press', i, t, ini)
@@ -238,11 +233,11 @@ class FSG(svFSI):
         self.step('solid', i)
         if not self.curr.check(['disp']):
             return
-        print(np.linalg.norm(self.curr.sol['disp']))
+        if n == 0:
+            self.curr.add(('solid', 'disp', 'vol'), self.coup_predict())
 
         # relax displacement update
         self.coup_relax('solid', 'disp', i, t, n)
-        # print(np.linalg.norm(self.curr.sol['disp']))
 
         # step 3: deform mesh
         if self.p['fluid'] == 'fsi':
@@ -252,31 +247,35 @@ class FSG(svFSI):
         # compute relaxation constant
         # self.coup_aitken()
 
-    def coup_predict(self, i, t):
-        if i == 1:
-            # zero displacements
-            self.curr.init('disp')
-        else:
-            # curr = self.curr.get(('solid', 'disp', 'vol'))
-            # prev = self.prev.get(('solid', 'disp', 'vol'))
-            # # solution of converged last load step
-            # # vec_m0 = self.log['disp'][-1][-1]
-            # # if ini and len(self.log[name]) > 2:
-            # #     # quadratically extrapolate from previous two load increments
-            # #     vec_m1 = self.log[name][-2][-1]
-            # #     vec_m2 = self.log[name][-3][-1]
-            # #     vec_relax = 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
-            # # elif ini and len(self.log[name]) > 1:
-            # #     # linearly extrapolate from previous load increment
-            # #     vec_m1 = self.log[name][-2][-1]
-            # vec_relax = 2.0 * curr - prev
-            # self.curr.add(('solid', 'disp', 'vol'), vec_relax)
+    def coup_predict(self):
+        # number of old solutions
+        n_sol = len(self.log['disp'])
 
-            # solution from poiseuille solution
-            f = 'gr/gr_' + str(t + 1).zfill(3) + '.vtu'
-            # pdb.set_trace()
-            geo = read_geo(f).GetOutput()
-            self.curr.add(('solid', 'disp', 'vol'), v2n(geo.GetPointData().GetArray('Displacement')))
+        # zero displacements
+        if n_sol == 0:
+            return np.zeros(self.points[('vol', 'solid')].shape)
+
+        # previous solution
+        vec_m0 = self.log['disp'][-1][-1]
+        if n_sol == 1:
+            return vec_m0
+
+        vec_m1 = self.log['disp'][-2][-1]
+        if n_sol == 2:
+            # linearly extrapolate from previous load increment
+            return 2.0 * vec_m0 - vec_m1
+
+        # quadratically extrapolate from previous two load increments
+        vec_m2 = self.log['disp'][-3][-1]
+        return 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
+
+    def coup_predict2(self, i, t):
+        # solution from poiseuille solution
+        f = 'gr/gr_' + str(t+1).zfill(3) + '.vtu'
+        # f = 'gr_partitioned/tube_' + str(t).zfill(3) + '.vtu'
+        geo = read_geo(f).GetOutput()
+        self.curr.add(('solid', 'disp', 'vol'), v2n(geo.GetPointData().GetArray('Displacement')))
+        # self.curr.add(('tube', 'disp', 'vol'), v2n(geo.GetPointData().GetArray('Displacement')))
 
     def coup_relax(self, domain, name, i, t, n):
         curr = deepcopy(self.curr.get((domain, name, 'vol')))
