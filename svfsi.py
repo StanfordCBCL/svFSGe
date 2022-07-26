@@ -121,9 +121,13 @@ class svFSI(Simulation):
             f.write('0.0 ' + str(-q) + '\n')
             f.write('100.0 ' + str(-q) + '\n')
 
-        # warp mesh by displacements
+        # add solution to fluid mesh
         fluid = self.mesh[('vol', 'fluid')]
         add_array(fluid, self.curr.get(('fluid', 'disp', 'vol')), sv_names['disp'])
+        for f in ['press', 'velo', 'disp']:
+            add_array(fluid, self.curr.get(('fluid', f, 'vol')), sv_names[f])
+
+        # warp mesh by displacements
         fluid.GetPointData().SetActiveVectors(sv_names['disp'])
         warp = vtk.vtkWarpVector()
         warp.SetInputData(fluid)
@@ -135,7 +139,7 @@ class svFSI(Simulation):
     def set_mesh(self):
         # write general bc file
         sol = self.curr.get(('solid', 'disp', 'int'))
-        points = self.points[('int', 'solid')]
+        points = v2n(self.mesh[('int', 'fluid')].GetPointData().GetArray('GlobalNodeID'))
         with open(self.p['f_disp'] + '.dat', 'w') as f:
             f.write('3 2 ' + str(len(sol)) + '\n')
             f.write('0.0\n')
@@ -166,7 +170,7 @@ class svFSI(Simulation):
 
         # write interface pressure to file
         geo = self.mesh[('int', 'solid')]
-        num = n2v(self.curr.get(('solid', 'press', 'int')))
+        num = self.curr.get(('solid', 'press', 'int'))
         name = 'Pressure'
         add_array(geo, num, name)
         write_geo(self.p['f_load_pressure'], geo)
@@ -218,7 +222,13 @@ class svFSI(Simulation):
 
             # extract fields
             for f in fields:
-                self.curr.add((phys, f, 'vol'), v2n(res.GetPointData().GetArray(sv_names[f])))
+                sol = v2n(res.GetPointData().GetArray(sv_names[f]))
+                if f == 'wss':
+                    # points on fluid interface
+                    map_int = self.map((('int', 'fluid'), ('vol', 'fluid')))
+                    self.curr.add((phys, f, 'int'), np.linalg.norm(sol, axis=1)[map_int])
+                else:
+                    self.curr.add((phys, f, 'vol'), sol)
 
     def poiseuille(self, q, p):
         # fluid mesh points
@@ -291,6 +301,9 @@ class Solution:
         for f in fields:
             if self.sol[f] is None:
                 return False
+            if f == 'disp':
+                if np.any(np.isnan(self.sol[f])):
+                    return False
         return True
 
     def init(self, f):

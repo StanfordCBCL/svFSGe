@@ -406,6 +406,7 @@ def generate_mesh(displacement=None):
     mesh.generate_cells()
     mesh.extract_svFSI()
     mesh.save_params('cylinder.json')
+    return mesh.p['fname']
 
 
 if __name__ == '__main__':

@@ -68,9 +68,9 @@ class FSG(svFSI):
         self.p['root'] = 'partitioned'
 
         # define file paths
-        self.p['exe'] = {'fluid': usr + '/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI',
-                         'solid': usr + '/work/repos/svFSI_fork/build/svFSI-build/bin/svFSI'}
-        self.p['exe']['mesh'] = self.p['exe']['fluid']
+        self.p['exe'] = {'fluid': usr + '/work/repos/svFSI_test/build/svFSI-build/bin/svFSI',
+                         'solid': usr + '/work/repos/svFSI_fork/build/svFSI-build/bin/svFSI',
+                         'mesh': usr + '/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'}
 
         # input files
         self.p['inp'] = {'fluid': 'steady_flow.inp', 'solid': 'gr_restart.inp', 'mesh': 'mesh.inp'}
@@ -79,7 +79,7 @@ class FSG(svFSI):
         self.p['out'] = {'fluid': 'steady', 'solid': 'gr_restart', 'mesh': 'mesh'}
 
         # number of processors
-        self.p['n_procs'] = {'solid': 1, 'fluid': 10, 'mesh': 10}
+        self.p['n_procs'] = {'solid': 1, 'fluid': 4, 'mesh': 4}
 
         # maximum number of time steps
         self.p['n_max'] = {'fluid': 20, 'mesh': 10}
@@ -95,7 +95,7 @@ class FSG(svFSI):
         self.p['p0'] = 13.9868
 
         # fluid flow
-        self.p['q0'] = 0
+        self.p['q0'] = 0.01
 
         # coupling tolerance
         self.p['coup_tol'] = 1.0e-2
@@ -118,10 +118,7 @@ class FSG(svFSI):
         # loop load steps
         i = 0
         for t in range(self.p['nmax'] + 1):
-            # pick next load factor
-            fp = self.p_vec[t]
-
-            print('=' * 30 + ' t ' + str(t) + ' ==== fp ' + '{:.2f}'.format(fp) + ' ' + '=' * 30)
+            print('=' * 30 + ' t ' + str(t) + ' ==== fp ' + '{:.2f}'.format(self.p_vec[t]) + ' ' + '=' * 30)
 
             # loop sub-iterations
             for n in range(self.p['coup_imax']):
@@ -131,7 +128,6 @@ class FSG(svFSI):
                 # store current load
                 if n == 0:
                     self.log['load'].append([])
-                self.log['load'][-1].append(fp)
 
                 # perform coupling step
                 self.coup_step(i, t, n)
@@ -214,11 +210,11 @@ class FSG(svFSI):
             self.curr.add(('solid', 'disp', 'vol'), self.coup_predict())
 
         # step 1: fluid update
-        if self.p['fluid'] == 'fsi':
-            self.set_fluid(self.p['q0'], self.p['p0'] * fp)
+        if self.p['fluid'] == 'fsi' and n != 0:
+            self.set_fluid(self.p['q0'], self.p['p0'] * self.p_vec[t])
             self.step('fluid', i)
-        elif self.p['fluid'] == 'poiseuille':
-            self.poiseuille(self.p['q0'], self.p['p0'])
+        else:
+            self.poiseuille(self.p['q0'], self.p['p0'] * self.p_vec[t])
         if not self.curr.check(['wss', 'press']):
             return
 
@@ -240,7 +236,7 @@ class FSG(svFSI):
         self.coup_relax('solid', 'disp', i, t, n)
 
         # step 3: deform mesh
-        if self.p['fluid'] == 'fsi':
+        if self.p['fluid'] == 'fsi' and n != 0:
             self.set_mesh()
             self.step('mesh', i)
 
@@ -331,6 +327,6 @@ def rad(x):
 
 
 if __name__ == '__main__':
-    fluid = 'poiseuille'
+    fluid = 'fsi'
     fsg = FSG(fluid)
     fsg.run()
