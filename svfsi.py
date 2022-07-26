@@ -39,14 +39,9 @@ class svFSI(Simulation):
     svFSI base class (handles simulation runs)
     """
 
-    def __init__(self, fluid, f_params=None):
+    def __init__(self, f_params=None):
         # simulation parameters
         Simulation.__init__(self, f_params)
-
-        # fluid mode (fsi or poiseuille)
-        if fluid not in ['fsi', 'poiseuille']:
-            raise ValueError('Unknown fluid option ' + fluid)
-        self.p['fluid'] = fluid
 
         # remove old output folders
         self.fields = ['fluid', 'solid', 'mesh']
@@ -83,6 +78,10 @@ class svFSI(Simulation):
         ct = str(datetime.datetime.now()).replace(' ', '_').replace(':', '-')
 
         # output folder name
+        if self.p['fsi']:
+            fluid = 'fsi'
+        else:
+            fluid = 'poiseuille'
         self.p['f_out'] = fluid + '_res_' + ct
 
         # create output folder
@@ -314,9 +313,6 @@ class Solution:
         # disp, velo, wss, press
         # vol, int
         d, f, p = kind
-
-        # first, reset everything
-        self.init(f)
 
         map_v = self.sim.map(((p, d), ('vol', 'tube')))
         if f in ['disp', 'velo', 'press']:

@@ -43,9 +43,9 @@ class FSG(svFSI):
     FSG-specific stuff
     """
 
-    def __init__(self, fluid, f_params=None):
+    def __init__(self, f_params=None):
         # svFSI simulations
-        svFSI.__init__(self, fluid, f_params)
+        svFSI.__init__(self, f_params)
 
     def run(self):
         # run simulation
@@ -63,6 +63,9 @@ class FSG(svFSI):
     def set_params(self):
         # debug mode?
         self.p['debug'] = False
+
+        # run 3D fsi?
+        self.p['fsi'] = True
 
         # simulation folder
         self.p['root'] = 'partitioned'
@@ -207,10 +210,10 @@ class FSG(svFSI):
 
         # predict solution for new time step
         if n == 0:
-            self.curr.add(('solid', 'disp', 'vol'), self.coup_predict())
+            self.curr.add(('solid', 'disp', 'int'), self.coup_predict())
 
         # step 1: fluid update
-        if self.p['fluid'] == 'fsi' and n != 0:
+        if self.p['fsi'] and n != 0:
             self.set_fluid(self.p['q0'], self.p['p0'] * self.p_vec[t])
             self.step('fluid', i)
         else:
@@ -230,13 +233,13 @@ class FSG(svFSI):
         if not self.curr.check(['disp']):
             return
         if n == 0:
-            self.curr.add(('solid', 'disp', 'vol'), self.coup_predict())
+            self.curr.add(('solid', 'disp', 'int'), self.coup_predict())
 
         # relax displacement update
         self.coup_relax('solid', 'disp', i, t, n)
 
         # step 3: deform mesh
-        if self.p['fluid'] == 'fsi' and n != 0:
+        if self.p['fsi'] and n != 0:
             self.set_mesh()
             self.step('mesh', i)
 
@@ -249,7 +252,7 @@ class FSG(svFSI):
 
         # zero displacements
         if n_sol == 0:
-            return np.zeros(self.points[('vol', 'solid')].shape)
+            return np.zeros(self.points[('int', 'solid')].shape)
 
         # previous solution
         vec_m0 = self.log['disp'][-1][-1]
@@ -274,8 +277,8 @@ class FSG(svFSI):
         # self.curr.add(('tube', 'disp', 'vol'), v2n(geo.GetPointData().GetArray('Displacement')))
 
     def coup_relax(self, domain, name, i, t, n):
-        curr = deepcopy(self.curr.get((domain, name, 'vol')))
-        prev = deepcopy(self.prev.get((domain, name, 'vol')))
+        curr = deepcopy(self.curr.get((domain, name, 'int')))
+        prev = deepcopy(self.prev.get((domain, name, 'int')))
         if i == 1 or n == 0:
             # first step: no old solution
             vec_relax = curr
@@ -286,7 +289,7 @@ class FSG(svFSI):
 
             if t == 0:
                 # normalize w.r.t. mean radius
-                norm = np.mean(rad(self.points[('vol', 'solid')]))
+                norm = np.mean(rad(self.points[('int', 'solid')]))
             else:
                 # normalize w.r.t. displacement norm
                 norm = np.linalg.norm(curr)
@@ -306,7 +309,7 @@ class FSG(svFSI):
         self.err[name][-1].append(err)
 
         # update solution
-        self.curr.add((domain, name, 'vol'), vec_relax)
+        self.curr.add((domain, name, 'int'), vec_relax)
 
     def coup_aitken(self):
         if len(self.log['r'][-1]) > 2:
@@ -327,6 +330,5 @@ def rad(x):
 
 
 if __name__ == '__main__':
-    fluid = 'fsi'
-    fsg = FSG(fluid)
+    fsg = FSG()
     fsg.run()
