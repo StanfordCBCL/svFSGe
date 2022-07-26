@@ -107,7 +107,11 @@ class svFSI(Simulation):
             self.maps[m] = map_ids(self.points[m[0]], self.points[m[1]])
         return self.maps[m]
 
-    def set_fluid(self, q, p):
+    def set_fluid(self):
+        # fluid flow and pressure
+        q = self.p['q0']
+        p = self.p['p0'] * self.p_vec[t]
+
         # set bc pressure
         with open('steady_pressure.dat', 'w') as f:
             f.write('2 1\n')
@@ -161,7 +165,7 @@ class svFSI(Simulation):
         # set wss and time
         props = v2n(solid.GetPointData().GetArray(n))
         props[:, 6] = self.curr.get(('solid', 'wss', 'vol'))
-        props[:, 7] = t
+        props[:, 7] = t + 1
         add_array(solid, props, n)
 
         # write geometry to file
@@ -174,9 +178,19 @@ class svFSI(Simulation):
         add_array(geo, num, name)
         write_geo(self.p['f_load_pressure'], geo)
 
-    def step(self, name, i):
+    def step(self, name, i, t):
         if name not in self.fields:
             raise ValueError('Unknown step option ' + name)
+
+        # set up input files
+        if name == 'fluid':
+            self.set_fluid()
+        elif name == 'solid':
+            self.set_solid(t)
+        elif name == 'mesh':
+            self.set_mesh()
+
+        # execute svFSI
         exe = 'mpirun -np'
         for k in ['n_procs', 'exe', 'inp']:
             exe += ' ' + str(self.p[k][name])
@@ -190,15 +204,15 @@ class svFSI(Simulation):
         # read and store results
         self.post(name, i)
 
-    def post(self, domain, i=None):
+    def post(self, domain, i):
         out = self.p['out'][domain]
         fname = os.path.join(out, out + '_')
         phys = domain
+        i_str = str(i).zfill(3)
         if domain == 'solid':
             # read current iteration
             fields = ['disp']
-            assert i is not None
-            src = fname + str(i).zfill(3) + '.vtu'
+            src = fname + i_str + '.vtu'
         elif domain == 'fluid':
             # read converged steady state flow
             fields = ['velo', 'wss', 'press']
@@ -216,6 +230,10 @@ class svFSI(Simulation):
             for f in fields:
                 self.curr.sol[f] = None
         else:
+            # archive results
+            trg = os.path.join(self.p['root'], domain + '_' + i_str + '.vtu')
+            shutil.copyfile(src, trg)
+
             # read results
             res = read_geo(src).GetOutput()
 
@@ -229,7 +247,11 @@ class svFSI(Simulation):
                 else:
                     self.curr.add((phys, f, 'vol'), sol)
 
-    def poiseuille(self, q, p):
+    def poiseuille(self, t):
+        # fluid flow and pressure
+        q = self.p['q0']
+        p = self.p['p0'] * self.p_vec[t]
+
         # fluid mesh points
         points_f = deepcopy(self.points[('vol', 'fluid')]) + deepcopy(self.curr.get(('fluid', 'disp', 'vol')))
 

@@ -65,7 +65,7 @@ class FSG(svFSI):
         self.p['debug'] = False
 
         # run 3D fsi?
-        self.p['fsi'] = True
+        self.p['fsi'] = False
 
         # simulation folder
         self.p['root'] = 'partitioned'
@@ -98,21 +98,21 @@ class FSG(svFSI):
         self.p['p0'] = 13.9868
 
         # fluid flow
-        self.p['q0'] = 0.01
+        self.p['q0'] = 0.0
 
         # coupling tolerance
-        self.p['coup_tol'] = 1.0e-4
+        self.p['coup_tol'] = 1.0e-3
 
         # maximum number of coupling iterations
         self.p['coup_imax'] = 100
 
         # relaxation constant
-        exp = 3
+        exp = 2
         self.p['coup_omega0'] = 1/2**exp
         self.p['coup_omega'] = self.p['coup_omega0']
 
         # maximum number of G&R time steps (excluding prestress)
-        self.p['nmax'] = 10
+        self.p['nmax'] = 6
 
         # maximum load factor
         self.p['fmax'] = 1.0
@@ -210,14 +210,13 @@ class FSG(svFSI):
 
         # predict solution for new time step
         if n == 0:
-            self.curr.add(('solid', 'disp', 'int'), self.coup_predict())
+            self.curr.add(('solid', 'disp', 'vol'), self.coup_predict())
 
         # step 1: fluid update
         if self.p['fsi'] and n != 0:
-            self.set_fluid(self.p['q0'], self.p['p0'] * self.p_vec[t])
-            self.step('fluid', i)
+            self.step('fluid', i, t)
         else:
-            self.poiseuille(self.p['q0'], self.p['p0'] * self.p_vec[t])
+            self.poiseuille(t)
         if not self.curr.check(['wss', 'press']):
             return
 
@@ -228,20 +227,18 @@ class FSG(svFSI):
         self.coup_relax('fluid', 'wss', i, t, n)
 
         # step 2: solid update
-        self.set_solid(t + 1)
-        self.step('solid', i)
+        self.step('solid', i, t)
         if not self.curr.check(['disp']):
             return
         if n == 0:
-            self.curr.add(('solid', 'disp', 'int'), self.coup_predict())
+            self.curr.add(('solid', 'disp', 'vol'), self.coup_predict())
 
         # relax displacement update
         self.coup_relax('solid', 'disp', i, t, n)
 
         # step 3: deform mesh
         if self.p['fsi'] and n != 0:
-            self.set_mesh()
-            self.step('mesh', i)
+            self.step('mesh', i, t)
 
         # compute relaxation constant
         # self.coup_aitken()
@@ -252,7 +249,7 @@ class FSG(svFSI):
 
         # zero displacements
         if n_sol == 0:
-            return np.zeros(self.points[('int', 'solid')].shape)
+            return np.zeros(self.points[('vol', 'solid')].shape)
 
         # previous solution
         vec_m0 = self.log['disp'][-1][-1]
@@ -268,26 +265,25 @@ class FSG(svFSI):
         vec_m2 = self.log['disp'][-3][-1]
         return 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
 
-    def coup_predict2(self, i, t):
+    def coup_predict2(self, t):
         # solution from poiseuille solution
         f = 'gr/gr_' + str(t+1).zfill(3) + '.vtu'
         # f = 'gr_partitioned/tube_' + str(t).zfill(3) + '.vtu'
         geo = read_geo(f).GetOutput()
-        self.curr.add(('solid', 'disp', 'vol'), v2n(geo.GetPointData().GetArray('Displacement')))
-        # self.curr.add(('tube', 'disp', 'vol'), v2n(geo.GetPointData().GetArray('Displacement')))
+        return v2n(geo.GetPointData().GetArray('Displacement'))
 
     def coup_relax(self, domain, name, i, t, n):
         curr = deepcopy(self.curr.get((domain, name, 'vol')))
-        prev = deepcopy(self.prev.get((domain, name, 'vol')))
+        # prev = deepcopy(self.prev.get((domain, name, 'vol')))
         curri = deepcopy(self.curr.get((domain, name, 'int')))
         previ = deepcopy(self.prev.get((domain, name, 'int')))
         if i == 1 or n == 0:
             # first step: no old solution
-            vec_relax = curr
+            vec_relax = curri
             err = 1.0
         else:
             # damp with previous iteration
-            vec_relax = self.p['coup_omega'] * curr + (1.0 - self.p['coup_omega']) * prev
+            vec_relax = self.p['coup_omega'] * curri + (1.0 - self.p['coup_omega']) * previ
 
             if t == 0:
                 # normalize w.r.t. mean radius
@@ -304,8 +300,8 @@ class FSG(svFSI):
             self.err[name].append([])
 
         # append current (damped) name
-        self.log[name + '_new'][-1].append(curr)
-        self.log[name][-1].append(vec_relax)
+        self.log[name][-1].append(curr)
+        # self.log[name][-1].append(vec_relax)
 
         # append error norm
         self.err[name][-1].append(err)
@@ -332,6 +328,5 @@ def rad(x):
 
 
 if __name__ == '__main__':
-    fluid = 'poiseuille'
-    fsg = FSG(fluid)
+    fsg = FSG()
     fsg.run()
