@@ -101,18 +101,18 @@ class FSG(svFSI):
         self.p['q0'] = 0.01
 
         # coupling tolerance
-        self.p['coup_tol'] = 1.0e-2
+        self.p['coup_tol'] = 1.0e-4
 
         # maximum number of coupling iterations
         self.p['coup_imax'] = 100
 
         # relaxation constant
-        exp = 2
+        exp = 3
         self.p['coup_omega0'] = 1/2**exp
         self.p['coup_omega'] = self.p['coup_omega0']
 
         # maximum number of G&R time steps (excluding prestress)
-        self.p['nmax'] = 20
+        self.p['nmax'] = 10
 
         # maximum load factor
         self.p['fmax'] = 1.0
@@ -225,7 +225,7 @@ class FSG(svFSI):
         # self.coup_relax('fluid', 'press', i, t, ini)
 
         # relax wss update
-        # self.coup_relax('fluid', 'wss', i, t, ini)
+        self.coup_relax('fluid', 'wss', i, t, n)
 
         # step 2: solid update
         self.set_solid(t + 1)
@@ -277,8 +277,10 @@ class FSG(svFSI):
         # self.curr.add(('tube', 'disp', 'vol'), v2n(geo.GetPointData().GetArray('Displacement')))
 
     def coup_relax(self, domain, name, i, t, n):
-        curr = deepcopy(self.curr.get((domain, name, 'int')))
-        prev = deepcopy(self.prev.get((domain, name, 'int')))
+        curr = deepcopy(self.curr.get((domain, name, 'vol')))
+        prev = deepcopy(self.prev.get((domain, name, 'vol')))
+        curri = deepcopy(self.curr.get((domain, name, 'int')))
+        previ = deepcopy(self.prev.get((domain, name, 'int')))
         if i == 1 or n == 0:
             # first step: no old solution
             vec_relax = curr
@@ -292,8 +294,8 @@ class FSG(svFSI):
                 norm = np.mean(rad(self.points[('int', 'solid')]))
             else:
                 # normalize w.r.t. displacement norm
-                norm = np.linalg.norm(curr)
-            err = np.linalg.norm(prev - curr) / norm
+                norm = np.linalg.norm(curri)
+            err = np.linalg.norm(previ - curri) / norm
 
         # start a new sub-list for new load step
         if n == 0:
@@ -330,5 +332,6 @@ def rad(x):
 
 
 if __name__ == '__main__':
-    fsg = FSG()
+    fluid = 'poiseuille'
+    fsg = FSG(fluid)
     fsg.run()
