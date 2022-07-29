@@ -57,8 +57,8 @@ class FSG(svFSI):
         except:
             pass
 
-        # archive results
-        self.archive()
+        # # archive results
+        # self.archive()
 
     def set_params(self):
         # debug mode?
@@ -82,10 +82,10 @@ class FSG(svFSI):
         self.p['out'] = {'fluid': 'steady', 'solid': 'gr_restart', 'mesh': 'mesh'}
 
         # number of processors
-        self.p['n_procs'] = {'solid': 1, 'fluid': 4, 'mesh': 4}
+        self.p['n_procs'] = {'solid': 1, 'fluid': 10, 'mesh': 10}
 
         # maximum number of time steps
-        self.p['n_max'] = {'fluid': 20, 'mesh': 10}
+        self.p['n_max'] = {'fluid': 30, 'mesh': 10}
 
         # interface loads
         self.p['f_load_pressure'] = 'interface_pressure.vtp'
@@ -101,18 +101,19 @@ class FSG(svFSI):
         self.p['q0'] = 0.0
 
         # coupling tolerance
-        self.p['coup_tol'] = 1.0e-3
+        self.p['coup_tol'] = 1.0e-14
 
         # maximum number of coupling iterations
-        self.p['coup_imax'] = 100
+        self.p['coup_nmin'] = 1
+        self.p['coup_nmax'] = 200
 
         # relaxation constant
-        exp = 2
+        exp = 1
         self.p['coup_omega0'] = 1/2**exp
         self.p['coup_omega'] = self.p['coup_omega0']
 
         # maximum number of G&R time steps (excluding prestress)
-        self.p['nmax'] = 6
+        self.p['nmax'] = 1
 
         # maximum load factor
         self.p['fmax'] = 1.0
@@ -124,15 +125,17 @@ class FSG(svFSI):
             print('=' * 30 + ' t ' + str(t) + ' ==== fp ' + '{:.2f}'.format(self.p_vec[t]) + ' ' + '=' * 30)
 
             # loop sub-iterations
-            for n in range(self.p['coup_imax']):
+            for n in range(self.p['coup_nmax']):
                 # count total iterations (load + sub-iterations)
                 i += 1
 
-                # store current load
-                if n == 0:
-                    self.log['load'].append([])
-
                 # perform coupling step
+                # if n == 0:
+                #     self.coup_predict(i, t, n)
+                #     self.p['coup_omega'] = 1.0
+                # else:
+                #     self.p['coup_omega'] = self.p['coup_omega0']
+
                 self.coup_step(i, t, n)
 
                 # check if simulation failed
@@ -140,6 +143,10 @@ class FSG(svFSI):
                     if s is None:
                         print(name + ' simulation failed')
                         return
+
+                # get error
+                self.coup_err('solid', 'disp', i, t, n)
+                self.coup_err('fluid', 'wss', i, t, n)
 
                 # screen output
                 out = 'i ' + str(i) + ' \tn ' + str(n)
@@ -152,13 +159,18 @@ class FSG(svFSI):
                 self.curr.archive(os.path.join(self.p['root'], 'tube_' + str(i).zfill(3) + '.vtu'), i)
 
                 # check if coupling converged
-                if np.all(np.array([e[-1][-1] for e in self.err.values()]) < self.p['coup_tol']):
+                check_tol = np.all(np.array([e[-1][-1] for e in self.err.values()]) < self.p['coup_tol'])
+                check_n = n >= self.p['coup_nmin']
+                if check_tol and check_n:
                     # save converged steps
                     i_conv = str(i).zfill(3)
                     t_conv = str(t).zfill(3)
-                    for src in glob.glob(os.path.join(self.p['root'], '*_' + i_conv + '.vt*')):
+                    for src in glob.glob(os.path.join(self.p['root'], '*_' + i_conv + '.*')):
                         trg = src.replace(i_conv, t_conv).replace(self.p['root'], self.p['root'] + '/converged')
                         shutil.copyfile(src, trg)
+
+                    # archive
+                    self.log += [self.curr.copy()]
 
                     # terminate coupling
                     break
@@ -206,14 +218,20 @@ class FSG(svFSI):
 
     def coup_step(self, i, t, n):
         # copy previous solution
-        self.prev.sol = deepcopy(self.curr.sol)
+        self.prev = self.curr.copy()
 
-        # predict solution for new time step
+        # replace solution with prediction
         if n == 0:
-            self.curr.add(('solid', 'disp', 'vol'), self.coup_predict())
+            # if i>1:
+            #     pdb.set_trace()
+            print('d', np.max(rad((self.curr.get(('solid', 'disp', 'int'))))))
+            print('w', np.min(self.curr.get(('fluid', 'wss', 'int'))))
+            self.coup_predict(i, t, n)
+        print('d', np.max(rad((self.curr.get(('solid', 'disp', 'int'))))))
+        print('w', np.min(self.curr.get(('fluid', 'wss', 'int'))))
 
         # step 1: fluid update
-        if self.p['fsi'] and n != 0:
+        if self.p['fsi']:
             self.step('fluid', i, t)
         else:
             self.poiseuille(t)
@@ -230,49 +248,87 @@ class FSG(svFSI):
         self.step('solid', i, t)
         if not self.curr.check(['disp']):
             return
-        if n == 0:
-            self.curr.add(('solid', 'disp', 'vol'), self.coup_predict())
 
         # relax displacement update
         self.coup_relax('solid', 'disp', i, t, n)
 
         # step 3: deform mesh
-        if self.p['fsi'] and n != 0:
+        if self.p['fsi']:
             self.step('mesh', i, t)
 
         # compute relaxation constant
         # self.coup_aitken()
 
-    def coup_predict(self):
-        # number of old solutions
-        n_sol = len(self.log['disp'])
+    def coup_predict(self, i, t, n):
+        fields = [('solid', 'disp', 'vol'), ('fluid', 'wss', 'vol')]
+        for f in fields:
+            self.curr.add(f, self.predictor2(f, t))
+        # self.poiseuille(t)
+        # self.curr.add(('fluid', 'wss', 'vol'), self.predictor('wss', t))
 
-        # zero displacements
+    def predictor(self, kind, t):
+        # fluid, solid, tube
+        # disp, velo, wss, press
+        # vol, int
+        d, f, p = kind
+
+        # number of old solutions
+        n_sol = len(self.log)
+
         if n_sol == 0:
-            return np.zeros(self.points[('vol', 'solid')].shape)
+            if f == 'disp':
+                # zero displacements
+                return np.zeros(self.points[(p, d)].shape)
+            elif f == 'wss':
+                # wss from poiseuille flow through reference configuration
+                self.poiseuille(t)
+                return self.curr.get(kind)
+            else:
+                raise ValueError('No predictor for field ' + f)
 
         # previous solution
-        vec_m0 = self.log['disp'][-1][-1]
+        vec_m0 = self.log[-1].get(kind)
         if n_sol == 1:
             return vec_m0
 
-        vec_m1 = self.log['disp'][-2][-1]
+        # linearly extrapolate from previous load increment
+        vec_m1 = self.log[-2].get(kind)
         if n_sol == 2:
-            # linearly extrapolate from previous load increment
             return 2.0 * vec_m0 - vec_m1
 
         # quadratically extrapolate from previous two load increments
-        vec_m2 = self.log['disp'][-3][-1]
+        vec_m2 = self.log[-3].get(kind)
         return 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
 
-    def coup_predict2(self, t):
+    def predictor2(self, kind, t):
+        d, f, p = kind
+
         # solution from poiseuille solution
-        f = 'gr/gr_' + str(t+1).zfill(3) + '.vtu'
-        # f = 'gr_partitioned/tube_' + str(t).zfill(3) + '.vtu'
-        geo = read_geo(f).GetOutput()
-        return v2n(geo.GetPointData().GetArray('Displacement'))
+        # fname = 'gr/gr_' + str(t+1).zfill(3) + '.vtu'
+        fname = 'gr_partitioned/tube_' + str(t).zfill(3) + '.vtu'
+        geo = read_geo(fname).GetOutput()
+        if f == 'disp':
+            return v2n(geo.GetPointData().GetArray('Displacement'))[self.map((('vol', 'solid'), ('vol', 'tube')))]
+        elif f == 'wss':
+            return v2n(geo.GetPointData().GetArray('WSS'))[self.map((('vol', 'fluid'), ('vol', 'tube')))]
 
     def coup_relax(self, domain, name, i, t, n):
+        curri = deepcopy(self.curr.get((domain, name, 'int')))
+        previ = deepcopy(self.prev.get((domain, name, 'int')))
+        if i == 1 or n == 0:
+            # first step: no old solution
+            vec_relax = curri
+        else:
+            # damp with previous iteration
+            vec_relax = self.p['coup_omega'] * curri + (1.0 - self.p['coup_omega']) * previ
+
+        # if i == 3:
+        #     pdb.set_trace()
+
+        # update solution
+        self.curr.add((domain, name, 'int'), vec_relax)
+
+    def coup_err(self, domain, name, i, t, n):
         curr = deepcopy(self.curr.get((domain, name, 'vol')))
         # prev = deepcopy(self.prev.get((domain, name, 'vol')))
         curri = deepcopy(self.curr.get((domain, name, 'int')))
@@ -282,32 +338,30 @@ class FSG(svFSI):
             vec_relax = curri
             err = 1.0
         else:
-            # damp with previous iteration
-            vec_relax = self.p['coup_omega'] * curri + (1.0 - self.p['coup_omega']) * previ
+            # difference
+            diff = np.abs(previ - curri)
+            if len(diff.shape) == 1:
+                diff_n = np.max(diff)
+            else:
+                diff_n = np.max(np.linalg.norm(diff, axis=1))
 
+            # norm
             if t == 0:
                 # normalize w.r.t. mean radius
                 norm = np.mean(rad(self.points[('int', 'solid')]))
             else:
                 # normalize w.r.t. displacement norm
-                norm = np.linalg.norm(curri)
-            err = np.linalg.norm(previ - curri) / norm
+                norm = np.max(np.abs(curri))
+
+            # normalized error
+            err = np.linalg.norm(diff_n) / norm
 
         # start a new sub-list for new load step
         if n == 0:
-            self.log[name + '_new'].append([])
-            self.log[name].append([])
             self.err[name].append([])
-
-        # append current (damped) name
-        self.log[name][-1].append(curr)
-        # self.log[name][-1].append(vec_relax)
 
         # append error norm
         self.err[name][-1].append(err)
-
-        # update solution
-        self.curr.add((domain, name, 'int'), vec_relax)
 
     def coup_aitken(self):
         if len(self.log['r'][-1]) > 2:

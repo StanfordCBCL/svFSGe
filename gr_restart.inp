@@ -55,8 +55,8 @@ Add mesh: msh {
 Add equation: struct {
    Coupled: 1
    Min iterations: 1
-   Max iterations: 10
-   Tolerance: 1e-10
+   Max iterations: 30
+   Tolerance: 1e-11
 
    Constitutive model: GR_Equilibrated
    Density: 0.0
@@ -124,8 +124,9 @@ Add equation: struct {
    # fluid pressure
    Add BC: inside {
       Type: Neu
-      Time dependence: Spatial
-      Spatial values file path: interface_pressure.vtp
+#      Time dependence: Spatial
+#      Spatial values file path: interface_pressure.vtp
+      Value: 13.9868
       Follower pressure load: t
    }
 }

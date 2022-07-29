@@ -45,18 +45,19 @@ Add mesh: fluid {
 Add equation: struct {
    Coupled: 1
    Min iterations: 1
-   Max iterations: 50
-   Tolerance: 1e-12
+   Max iterations: 10
+   Tolerance: 1e-3
 
    Constitutive model: stVK
    Density: 0.0
    Elasticity modulus: 1.0
    Poisson ratio: 0.3
 
-   LS type: GMRES {
-      Preconditioner: Trilinos-ILUT
-      Tolerance: 1e-12
-   }
+   LS type: BICG {
+      Preconditioner: FSILS
+      Tolerance: 1e-3
+      Max iterations:      1000
+}
 
    Output: Spatial {
       Displacement: t

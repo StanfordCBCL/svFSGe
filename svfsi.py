@@ -88,7 +88,7 @@ class svFSI(Simulation):
         os.makedirs(self.p['f_out'])
 
         # logging
-        self.log = defaultdict(list)
+        self.log = []
         self.err = defaultdict(list)
 
         # current/previous solution vector at interface and in volume
@@ -107,7 +107,7 @@ class svFSI(Simulation):
             self.maps[m] = map_ids(self.points[m[0]], self.points[m[1]])
         return self.maps[m]
 
-    def set_fluid(self):
+    def set_fluid(self, t):
         # fluid flow and pressure
         q = self.p['q0']
         p = self.p['p0'] * self.p_vec[t]
@@ -123,6 +123,9 @@ class svFSI(Simulation):
             f.write('2 1\n')
             f.write('0.0 ' + str(-q) + '\n')
             f.write('100.0 ' + str(-q) + '\n')
+
+        # initialize with poiseuille solution
+        self.poiseuille(t)
 
         # add solution to fluid mesh
         fluid = self.mesh[('vol', 'fluid')]
@@ -184,7 +187,7 @@ class svFSI(Simulation):
 
         # set up input files
         if name == 'fluid':
-            self.set_fluid()
+            self.set_fluid(t)
         elif name == 'solid':
             self.set_solid(t)
         elif name == 'mesh':
@@ -369,6 +372,11 @@ class Solution:
         for f in self.fields:
             add_array(geo, self.sol[f], sv_names[f])
         write_geo(fname, geo)
+
+    def copy(self):
+        solution = Solution(self.sim)
+        solution.sol = deepcopy(self.sol)
+        return solution
 
 
 def map_ids(src, trg):
