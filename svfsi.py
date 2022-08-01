@@ -234,7 +234,7 @@ class svFSI(Simulation):
                 self.curr.sol[f] = None
         else:
             # archive results
-            trg = os.path.join(self.p['root'], domain + '_' + i_str + '.vtu')
+            trg = os.path.join(self.p['root'], domain + '_out_' + i_str + '.vtu')
             shutil.copyfile(src, trg)
 
             # read results
@@ -249,6 +249,13 @@ class svFSI(Simulation):
                     self.curr.add((phys, f, 'int'), np.linalg.norm(sol, axis=1)[map_int])
                 else:
                     self.curr.add((phys, f, 'vol'), sol)
+
+        # archive input
+        if domain in ['fluid', 'solid']:
+            src = os.path.join(self.p['root'], self.p['f_' + domain + '_geo'])
+            trg = os.path.join(self.p['root'], domain + '_inp_' + i_str + '.vtu')
+            shutil.copyfile(src, trg)
+            os.remove(src)
 
     def poiseuille(self, t):
         # fluid flow and pressure
