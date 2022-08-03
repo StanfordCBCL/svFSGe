@@ -37,7 +37,7 @@ Add mesh: fluid {
    Add face: f_y_zero {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
    }
-#Initial displacements file path: 10-procs/mesh_010.vtu
+   Initial displacements file path: partitioned/initial_fluid.vtu
 }
 
 #----------------------------------------------------------------

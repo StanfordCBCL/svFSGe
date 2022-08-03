@@ -5,17 +5,20 @@ Continue previous simulation: 1
 Number of spatial dimensions: 3
 Number of time steps: 1
 Time step size: 1.0
+Spectral radius of infinite time step: 0.0
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: gr_restart
 Increment in saving VTK files: 1
 Start saving after time step: 1
+#Convert BIN to VTK format: 1
 Save results in folder: gr_restart
 
 Increment in saving restart files: 1
 
 Overwrite restart file: 0
 #Restart file name: gr
+#Simulation initialization file path: partitioned/initial.vtu
 
 Verbose: 1
 Warning: 0
@@ -29,6 +32,7 @@ Add mesh: msh {
    Number of variable wall properties: 13
    Variable wall properties file path: partitioned/solid.vtu
 #   Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
+#   Initial displacements file path: partitioned/initial_solid.vtu
    Add face: start {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/start.vtp
    }
@@ -59,9 +63,13 @@ Add equation: struct {
    Tolerance: 1e-11
 
    Constitutive model: GR_Equilibrated
-   Density: 0.0
    Elasticity modulus: 1.0e-16
    Poisson ratio: 0.0
+   Density: 0.0
+
+# converges until 8
+#   Density: 1.0e-3
+#   Mass damping: 2e2
 
 #   Constitutive model: stVK
 #   Density: 0.0
@@ -124,9 +132,9 @@ Add equation: struct {
    # fluid pressure
    Add BC: inside {
       Type: Neu
-#      Time dependence: Spatial
-#      Spatial values file path: interface_pressure.vtp
-      Value: 13.9868
+      Time dependence: Spatial
+      Spatial values file path: interface_pressure.vtp
+#      Value: 13.9868
       Follower pressure load: t
    }
 }

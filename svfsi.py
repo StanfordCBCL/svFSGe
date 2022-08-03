@@ -200,18 +200,25 @@ class svFSI(Simulation):
         with open(os.path.join(self.p['root'], name + '_' + str(i).zfill(3) + '.log'), 'w') as f:
             if self.p['debug']:
                 print(exe)
-                subprocess.run(shlex.split(exe))
+                child = subprocess.run(shlex.split(exe))
             else:
-                subprocess.run(shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL)
+                child = subprocess.run(shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL)
+
+        # check if simulation crashed and return error
+        if child.returncode != 0:
+            for f in self.curr.sol.keys():
+                self.curr.sol[f] = None
+            return True
 
         # read and store results
-        self.post(name, i)
+        return self.post(name, i)
 
     def post(self, domain, i):
         out = self.p['out'][domain]
         fname = os.path.join(out, out + '_')
         phys = domain
         i_str = str(i).zfill(3)
+        src = fname + str(self.p['n_max'][domain]).zfill(3) + '.vtu'
         if domain == 'solid':
             # read current iteration
             fields = ['disp']
@@ -219,12 +226,10 @@ class svFSI(Simulation):
         elif domain == 'fluid':
             # read converged steady state flow
             fields = ['velo', 'wss', 'press']
-            src = fname + str(self.p['n_max']['fluid']).zfill(3) + '.vtu'
         elif domain == 'mesh':
             # read fully displaced mesh
             fields = ['disp']
             phys = 'fluid'
-            src = fname + str(self.p['n_max']['mesh']).zfill(3) + '.vtu'
         else:
             raise ValueError('Unknown domain ' + domain)
 
@@ -232,6 +237,7 @@ class svFSI(Simulation):
         if not os.path.exists(src):
             for f in fields:
                 self.curr.sol[f] = None
+                return True
         else:
             # archive results
             trg = os.path.join(self.p['root'], domain + '_out_' + i_str + '.vtu')
@@ -256,6 +262,8 @@ class svFSI(Simulation):
             trg = os.path.join(self.p['root'], domain + '_inp_' + i_str + '.vtu')
             shutil.copyfile(src, trg)
             os.remove(src)
+
+        return False
 
     def poiseuille(self, t):
         # fluid flow and pressure
@@ -315,7 +323,7 @@ class Solution:
 
         # "zero" vectors. use nan where quantity is not defined
         self.zero = {'disp': np.zeros(dim_vec),
-                     'velo': np.ones(dim_vec) * np.nan,
+                     'velo': np.zeros(dim_vec),
                      'wss': np.ones(dim_sca) * np.nan,
                      'press': np.zeros(dim_sca) * np.nan}
         self.fields = self.zero.keys()
@@ -374,10 +382,10 @@ class Solution:
         map_s = self.sim.map(((p, d), ('vol', 'tube')))
         return deepcopy(self.sol[f][map_s])
 
-    def archive(self, fname, i):
-        geo = self.sim.mesh[('vol', 'tube')]
+    def archive(self, domain, fname):
+        geo = self.sim.mesh[('vol', domain)]
         for f in self.fields:
-            add_array(geo, self.sol[f], sv_names[f])
+            add_array(geo, self.sol[f][self.sim.map((('vol', domain), ('vol', 'tube')))], sv_names[f])
         write_geo(fname, geo)
 
     def copy(self):
