@@ -131,12 +131,6 @@ class FSG(svFSI):
                 i += 1
 
                 # perform coupling step
-                # if n == 0:
-                #     self.coup_predict(i, t, n)
-                #     self.p['coup_omega'] = 1.0
-                # else:
-                #     self.p['coup_omega'] = self.p['coup_omega0']
-
                 self.coup_step(i, t, n)
 
                 # check if simulation failed
@@ -230,10 +224,6 @@ class FSG(svFSI):
         if n == 0:
             self.coup_predict(i, t, n)
 
-        self.curr.archive('solid', os.path.join(self.p['root'], 'initial_solid.vtu'))
-        self.curr.archive('fluid', os.path.join(self.p['root'], 'initial_fluid.vtu'))
-
-        # step 1: fluid update
         if self.p['fsi']:
             if self.step('fluid', i, t):
                 return
