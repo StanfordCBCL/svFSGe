@@ -3,10 +3,11 @@
 
 Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 30
-Time step size: 0.1
+Number of time steps: 10
+Time step size: 0.002
 
-#Simulation initialization file path: fluid/mesh.vtu
+#Simulation initialization file path: partitioned/fluid.vtu
+#Simulation initialization file path: initial/steady_020.vtu
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: steady
@@ -42,8 +43,8 @@ Add mesh: fluid {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
    }
    Domain: 0
-   Initial pressures file path:  partitioned/fluid.vtu
-   Initial velocities file path: partitioned/fluid.vtu
+#   Initial pressures file path:  partitioned/fluid.vtu
+#   Initial velocities file path: partitioned/fluid.vtu
 }
 
 #----------------------------------------------------------------
@@ -54,8 +55,8 @@ Add equation: fluid {
    Max iterations: 10
    Tolerance: 1e-3
 
-   Density: 1.0
-   Viscosity: Constant {Value: 0.04}
+   Density: 1.06e-6
+   Viscosity: Constant {Value: 4e-6}
    Backflow stabilization coefficient: 0.2
 
    LS type: GMRES {
@@ -64,7 +65,8 @@ Add equation: fluid {
 #      Preconditioner: Trilinos-Diagonal # slow
 #      Preconditioner: Trilinos-ICT
       Tolerance: 1e-3
-      Max iterations: 100
+      Max iterations: 200
+#      Krylov space dimension: 100
    }
 
    Output: Spatial {
@@ -77,10 +79,12 @@ Add equation: fluid {
    # fluid: inflow
    Add BC: f_start {
       Type: Dir
-      Value: 0.1
+#      Value: 0.1
       Impose flux: t
       Zero out perimeter: f
-      Time dependence: Steady
+#      Time dependence: Steady
+      Time dependence: Unsteady
+      Temporal values file path: steady_flow.dat
       Profile: User_defined
       Spatial profile file path: mesh_tube_fsi/inflow_profile.dat
       Effective direction: (0, 0, 1)
@@ -113,9 +117,9 @@ Add equation: fluid {
    # fluid: outflow pressure
    Add BC: f_end {
       Type: Neu
-      Time dependence: Steady
-      Value: 13.9868
-#      Time dependence: Unsteady
-#      Temporal values file path: steady_pressure.dat
+#      Time dependence: Steady
+#      Value: 13.9868
+      Time dependence: Unsteady
+      Temporal values file path: steady_pressure.dat
    }
 }
