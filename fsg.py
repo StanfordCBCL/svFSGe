@@ -4,14 +4,9 @@
 import pdb
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.io
-import scipy.sparse.linalg
 import sys
-import subprocess
-import shlex
 import shutil
 import os
-import vtk
 import json
 import platform
 import distro
@@ -27,7 +22,6 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 
 from svfsi import svFSI
-
 
 if platform.system() == 'Darwin':
     usr = '/Users/pfaller/'
@@ -62,7 +56,6 @@ class FSG(svFSI):
             pass
 
         # archive results
-        pdb.set_trace()
         self.archive()
 
     def set_params(self):
@@ -73,61 +66,57 @@ class FSG(svFSI):
         self.p['fsi'] = True
 
         # mesh name
-        self.p['mesh'] = 'in/tube_adapt.json'
-        # self.p['mesh'] = 'in/minimal_tube2.json'
+        self.p['mesh'] = 'in_geo/tube_adapt.json'
 
         # simulation folder
         self.p['root'] = 'partitioned'
 
         # define file paths
-        self.p['exe'] = {'fluid': usr + '/work/repos/svFSI_test/build/svFSI-build/bin/svFSI',
-                         'solid': usr + '/work/repos/svFSI_fork/build/svFSI-build/bin/svFSI',
-                         'mesh': usr + '/work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'}
+        self.p['exe'] = {'fluid': 'work/repos/svFSI_test/build/svFSI-build/bin/svFSI',
+                         'solid': 'work/repos/svFSI_fork/build/svFSI-build/bin/svFSI',
+                         'mesh': 'work/repos/svFSI_clean/build/svFSI-build/bin/svFSI'}
 
         # input files
-        self.p['inp'] = {'fluid': 'steady_flow.inp', 'solid': 'gr_restart.inp', 'mesh': 'mesh.inp'}
+        self.p['inp'] = {'fluid': 'steady_flow.inp',
+                         'solid': 'gr_restart.inp',
+                         'mesh': 'mesh.inp'}
 
         # output folders
-        self.p['out'] = {'fluid': 'steady', 'solid': 'gr_restart', 'mesh': 'mesh'}
+        self.p['out'] = {'fluid': 'steady',
+                         'solid': 'gr_restart',
+                         'mesh': 'mesh'}
 
         # number of processors
-        self.p['n_procs'] = {'solid': 1, 'fluid': 10, 'mesh': 10}
+        self.p['n_procs'] = {'fluid': 10,
+                             'solid': 1,
+                             'mesh': 10}
 
         # maximum number of time steps
-        self.p['n_max'] = {'solid': 1, 'fluid': 10, 'mesh': 10}
+        self.p['n_max'] = {'fluid': 10,
+                           'solid': 1,
+                           'mesh': 10}
 
-        # interface loads
-        self.p['f_load_pressure'] = 'interface_pressure.vtp'
-        self.p['f_load_wss'] = 'interface_wss.vtp'
-        self.p['f_disp'] = 'interface_displacement'
-        self.p['f_solid_geo'] = 'solid.vtu'
-        self.p['f_fluid_geo'] = 'fluid.vtu'
+        # interface files
+        self.p['interfaces'] = {'bc_flow': 'steady_flow.dat',
+                                'bc_pressure': 'steady_pressure.dat',
+                                'geo_solid': 'solid.vtu',
+                                'geo_fluid': 'fluid.vtu',
+                                'load_pressure': 'interface_pressure.vtp',
+                                'load_wss': 'interface_wss.vtp',
+                                'disp': 'interface_displacement'}
 
-        # FSG material uses units mm, kg, s
-        # pressure [kPa]
-        # fluid density rho = 1.06e-6 [kg/mm^3]
-        # fluid dynamic viscosity mu = 4.0e-6 [kg/mm/s]
+        # fluid parameters. FSG material uses units mm, kg, s
+        self.p['fluid'] = {'mu': 4.0e-6,  # dynamic viscosity [kg/mm/s]. fluid density rho = 1.06e-6 [kg/mm^3]
+                           'p0': 13.9868,  # homeostatic pressure [kPa]
+                           'q0': 1000.0,  # fluid flow [mm^3/s] = 10^3 [cm^3/s] = 10^3 [ml/s]
+                           }
 
-        # homeostatic pressure
-        self.p['p0'] = 13.9868
-
-        # fluid dynamic viscosity
-        self.p['mu'] = 4.0e-6
-
-        # fluid flow
-        self.p['q0'] = 1000.0
-
-        # coupling tolerance
-        self.p['coup_tol'] = 1.0e-4
-
-        # maximum number of coupling iterations
-        self.p['coup_nmin'] = 1
-        self.p['coup_nmax'] = 200
-
-        # relaxation constant
-        exp = 2
-        self.p['coup_omega0'] = 1/2**exp
-        self.p['coup_omega'] = self.p['coup_omega0']
+        # coupling parameters
+        self.p['coup'] = {'tol': 1.0e-4,  # coupling tolerance
+                          'nmin': 1,  # minimum number of coupling iterations
+                          'nmax': 200,  # maximum number of coupling iterations
+                          'omega0': 1.0 / 2.0,  # base relaxation constant (1/powers of 2)
+                          }
 
         # maximum number of G&R time steps (excluding prestress)
         self.p['nmax'] = 10
@@ -142,7 +131,7 @@ class FSG(svFSI):
             print('=' * 30 + ' t ' + str(t) + ' ==== fp ' + '{:.2f}'.format(self.p_vec[t]) + ' ' + '=' * 30)
 
             # loop sub-iterations
-            for n in range(self.p['coup_nmax']):
+            for n in range(self.p['coup']['nmax']):
                 # count total iterations (load + sub-iterations)
                 i += 1
 
@@ -163,7 +152,7 @@ class FSG(svFSI):
                 out = 'i ' + str(i) + ' \tn ' + str(n)
                 for name, e in self.err.items():
                     out += '\t' + name + ' ' + '{:.2e}'.format(e[-1][-1])
-                out += '\tomega ' + '{:.2e}'.format(self.p['coup_omega'])
+                out += '\tomega ' + '{:.2e}'.format(self.p['coup']['omega'])
                 print(out)
 
                 # archive solution
@@ -171,8 +160,8 @@ class FSG(svFSI):
                 self.log += [self.curr.copy()]
 
                 # check if coupling converged
-                check_tol = np.all(np.array([e[-1][-1] for e in self.err.values()]) < self.p['coup_tol'])
-                check_n = n >= self.p['coup_nmin']
+                check_tol = np.all(np.array([e[-1][-1] for e in self.err.values()]) < self.p['coup']['tol'])
+                check_n = n >= self.p['coup']['nmin']
                 if check_tol and check_n:
                     # save converged steps
                     i_conv = str(i).zfill(3)
@@ -211,7 +200,7 @@ class FSG(svFSI):
                         plot += [np.mean(rad(v))]
                     else:
                         plot += [np.mean(v)]
-            ax[i].plot(plot, linestyle='-', color=col)#, marker='o'
+            ax[i].plot(plot, linestyle='-', color=col)  # , marker='o'
         fig.savefig(os.path.join(self.p['f_out'], 'convergence.png'), bbox_inches='tight')
         plt.show()
         plt.close(fig)
@@ -231,13 +220,13 @@ class FSG(svFSI):
     def coup_step(self, i, t, n):
         if t == 0:
             # no relaxation necessary during prestressing (prestress does not depend on wss)
-            self.p['coup_omega'] = 1.0
+            self.p['coup']['omega'] = 1.0
         else:
             if t == 1:
-                self.p['coup_omega'] = self.p['coup_omega0'] / 2.0
+                self.p['coup']['omega'] = self.p['coup']['omega0'] / 2.0
             else:
-                self.p['coup_omega'] = self.p['coup_omega0']
-            # self.p['coup_omega'] = self.coup_aitken(('tube', 'disp', 'vol'))
+                self.p['coup']['omega'] = self.p['coup']['omega0']
+            # self.p['coup']['omega'] = self.coup_aitken(('tube', 'disp', 'vol'))
 
         # copy previous solution
         self.prev = self.curr.copy()
@@ -315,7 +304,7 @@ class FSG(svFSI):
     def predictor_tube(self, kind, t):
         d, f, p = kind
         # fname = 'gr_partitioned/tube_' + str(t).zfill(3) + '.vtu'
-        fname = 'gr/gr_' + str(t+1).zfill(3) + '.vtu'
+        fname = 'gr/gr_' + str(t + 1).zfill(3) + '.vtu'
         if not os.path.exists(fname):
             return None
         geo = read_geo(fname).GetOutput()
@@ -338,7 +327,7 @@ class FSG(svFSI):
             vec_relax = curri
         else:
             # damp with previous iteration
-            vec_relax = self.p['coup_omega'] * curri + (1.0 - self.p['coup_omega']) * previ
+            vec_relax = self.p['coup']['omega'] * curri + (1.0 - self.p['coup']['omega']) * previ
 
         # update solution
         self.curr.add((domain, name, 'vol'), vec_relax)
@@ -380,7 +369,7 @@ class FSG(svFSI):
 
     def coup_aitken(self, kind):
         if len(self.log) < 2:
-            return self.p['coup_omega0']
+            return self.p['coup']['omega0']
 
         # current and old solution
         m2 = self.log[-1].get(kind)
@@ -392,10 +381,10 @@ class FSG(svFSI):
         norm = np.linalg.norm(diff)
 
         if norm == 0.0:
-            return self.p['coup_omega0']
+            return self.p['coup']['omega0']
         else:
             # relaxation
-            omega = - self.p['coup_omega'] * np.dot(m1, diff) / norm ** 2
+            omega = - self.p['coup']['omega'] * np.dot(m1, diff) / norm ** 2
 
             # lower bound
             # omega = np.max([omega, 1/2**3])
@@ -409,9 +398,9 @@ class FSG(svFSI):
 def rad(x):
     sign = - (x[:, 0] < 0.0).astype(int)
     sign += (x[:, 0] > 0.0).astype(int)
-    return sign * np.sqrt(x[:, 0]**2 + x[:, 1]**2)
+    return sign * np.sqrt(x[:, 0] ** 2 + x[:, 1] ** 2)
 
 
 if __name__ == '__main__':
-    fsg = FSG()
+    fsg = FSG('in_sim/partitioned.json')
     fsg.run()

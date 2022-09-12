@@ -109,19 +109,19 @@ class svFSI(Simulation):
 
     def set_fluid(self, t):
         # fluid flow (scale by number of tube segments)
-        q = self.p['q0'] / self.mesh_p['n_seg']
+        q = self.p['fluid']['q0'] / self.mesh_p['n_seg']
 
         # fluid pressure (scale by current pressure load step)
-        p = self.p['p0'] * self.p_vec[t]
+        p = self.p['fluid']['p0'] * self.p_vec[t]
 
         # set bc pressure
-        with open('steady_pressure.dat', 'w') as f:
+        with open(self.p['interfaces']['bc_pressure'], 'w') as f:
             f.write('2 1\n')
             f.write('0.0 ' + str(p) + '\n')
             f.write('100.0 ' + str(p) + '\n')
 
         # set bc flow
-        with open('steady_flow.dat', 'w') as f:
+        with open(self.p['interfaces']['bc_flow'], 'w') as f:
             f.write('2 1\n')
             f.write('0.0 ' + str(q) + '\n')
             f.write('100.0 ' + str(q) + '\n')
@@ -142,13 +142,13 @@ class svFSI(Simulation):
         warp.Update()
 
         # write geometry to file
-        write_geo(os.path.join(self.p['root'], self.p['f_fluid_geo']), warp.GetOutput())
+        write_geo(os.path.join(self.p['root'], self.p['interfaces']['geo_fluid']), warp.GetOutput())
 
     def set_mesh(self):
         # write general bc file
         sol = self.curr.get(('solid', 'disp', 'int'))
         points = v2n(self.mesh[('int', 'fluid')].GetPointData().GetArray('GlobalNodeID'))
-        with open(self.p['f_disp'] + '.dat', 'w') as f:
+        with open(self.p['interfaces']['disp'] + '.dat', 'w') as f:
             f.write('3 2 ' + str(len(sol)) + '\n')
             f.write('0.0\n')
             f.write('1.0\n')
@@ -174,14 +174,14 @@ class svFSI(Simulation):
         add_array(solid, props, n)
 
         # write geometry to file
-        write_geo(os.path.join(self.p['root'], self.p['f_solid_geo']), solid)
+        write_geo(os.path.join(self.p['root'], self.p['interfaces']['geo_solid']), solid)
 
         # write interface pressure to file
         geo = self.mesh[('int', 'solid')]
         num = self.curr.get(('solid', 'press', 'int'))
         name = 'Pressure'
         add_array(geo, num, name)
-        write_geo(self.p['f_load_pressure'], geo)
+        write_geo(self.p['interfaces']['load_pressure'], geo)
 
     def step(self, name, i, t):
         if name not in self.fields:
@@ -196,9 +196,11 @@ class svFSI(Simulation):
             self.set_mesh()
 
         # execute svFSI
-        exe = 'mpirun -np'
+        exe = 'mpirun -np '
         for k in ['n_procs', 'exe', 'inp']:
-            exe += ' ' + str(self.p[k][name])
+            if k == 'exe':
+                exe += usr
+            exe += str(self.p[k][name]) + ' '
         with open(os.path.join(self.p['root'], name + '_' + str(i).zfill(3) + '.log'), 'w') as f:
             if self.p['debug']:
                 print(exe)
@@ -260,7 +262,7 @@ class svFSI(Simulation):
 
         # archive input
         if domain in ['fluid', 'solid']:
-            src = os.path.join(self.p['root'], self.p['f_' + domain + '_geo'])
+            src = os.path.join(self.p['root'], self.p['interfaces']['geo_' + domain])
             trg = os.path.join(self.p['root'], domain + '_inp_' + i_str + '.vtu')
             shutil.copyfile(src, trg)
             os.remove(src)
@@ -269,8 +271,8 @@ class svFSI(Simulation):
 
     def poiseuille(self, t):
         # fluid flow and pressure
-        q = self.p['q0']
-        p = self.p['p0'] * self.p_vec[t]
+        q = self.p['fluid']['q0']
+        p = self.p['fluid']['p0'] * self.p_vec[t]
 
         # fluid mesh points
         points_f = deepcopy(self.points[('vol', 'fluid')]) + deepcopy(self.curr.get(('fluid', 'disp', 'vol')))
@@ -286,7 +288,7 @@ class svFSI(Simulation):
         rad_norm = rad / rmax
 
         # estimate Poiseuille resistance
-        res = 8.0 * self.p['mu'] * amax / np.pi / rmax ** 4
+        res = 8.0 * self.p['fluid']['mu'] * amax / np.pi / rmax ** 4
 
         # estimate linear pressure gradient
         press = p * np.ones(len(rad)) + res * q * (1.0 - ax)
@@ -305,7 +307,7 @@ class svFSI(Simulation):
             q = 1.0
 
         # calculate wss from const Poiseuille flow
-        wss = 4.0 * self.p['mu'] * q / np.pi / rad[map_int] ** 3.0
+        wss = 4.0 * self.p['fluid']['mu'] * q / np.pi / rad[map_int] ** 3.0
         self.curr.add(('fluid', 'wss', 'int'), wss)
 
 
