@@ -14,6 +14,7 @@ import os
 import vtk
 import json
 import platform
+import distro
 import glob
 from copy import deepcopy
 from collections import defaultdict
@@ -31,7 +32,10 @@ from svfsi import svFSI
 if platform.system() == 'Darwin':
     usr = '/Users/pfaller/'
 elif platform.system() == 'Linux':
-    usr = '/home/pfaller/'
+    if distro.name() == 'CentOS Linux':
+        usr = '/home/users/pfaller/'
+    else:
+        usr = '/home/pfaller/'
 
 # from https://github.com/StanfordCBCL/DataCuration
 sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
