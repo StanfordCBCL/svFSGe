@@ -56,15 +56,14 @@ class svFSI(Simulation):
         os.makedirs(os.path.join(self.p['root'], 'converged'))
 
         # generate and initialize mesh
-        mesh_name = generate_mesh()
-        # self.initialize_mesh()
+        self.mesh_p = generate_mesh(self.p['mesh'])
 
         # intialize meshes
         self.mesh = {}
         for d in ['fluid', 'solid']:
             self.mesh[('int', d)] = read_geo('mesh_tube_fsi/' + d + '/mesh-surfaces/interface.vtp').GetOutput()
             self.mesh[('vol', d)] = read_geo('mesh_tube_fsi/' + d + '/mesh-complete.mesh.vtu').GetOutput()
-        self.mesh[('vol', 'tube')] = read_geo('mesh_tube_fsi/' + mesh_name).GetOutput()
+        self.mesh[('vol', 'tube')] = read_geo('mesh_tube_fsi/' + self.mesh_p['fname']).GetOutput()
 
         # read points
         self.points = {}
@@ -88,6 +87,7 @@ class svFSI(Simulation):
         os.makedirs(self.p['f_out'])
 
         # logging
+        self.converged = []
         self.log = []
         self.err = defaultdict(list)
 
@@ -108,8 +108,10 @@ class svFSI(Simulation):
         return self.maps[m]
 
     def set_fluid(self, t):
-        # fluid flow and pressure
-        q = self.p['q0']
+        # fluid flow (scale by number of tube segments)
+        q = self.p['q0'] / self.mesh_p['n_seg']
+
+        # fluid pressure (scale by current pressure load step)
         p = self.p['p0'] * self.p_vec[t]
 
         # set bc pressure
@@ -121,11 +123,11 @@ class svFSI(Simulation):
         # set bc flow
         with open('steady_flow.dat', 'w') as f:
             f.write('2 1\n')
-            f.write('0.0 ' + str(-q) + '\n')
-            f.write('100.0 ' + str(-q) + '\n')
+            f.write('0.0 ' + str(q) + '\n')
+            f.write('100.0 ' + str(q) + '\n')
 
         # initialize with poiseuille solution
-        self.poiseuille(t)
+        # self.poiseuille(t)
 
         # add solution to fluid mesh
         fluid = self.mesh[('vol', 'fluid')]
@@ -284,7 +286,7 @@ class svFSI(Simulation):
         rad_norm = rad / rmax
 
         # estimate Poiseuille resistance
-        res = 8.0 * 0.04 * amax / np.pi / rmax ** 4
+        res = 8.0 * self.p['mu'] * amax / np.pi / rmax ** 4
 
         # estimate linear pressure gradient
         press = p * np.ones(len(rad)) + res * q * (1.0 - ax)
@@ -292,7 +294,7 @@ class svFSI(Simulation):
 
         # estimate quadratic flow profile
         velo = np.zeros(points_f.shape)
-        velo[:, 2] = 4.0 * q / (rmax ** 2.0 * np.pi) * 2.0 * (1.0 - rad_norm ** 2.0)
+        velo[:, 2] = q / (rmax ** 2.0 * np.pi) * 2.0 * (1.0 - rad_norm ** 2.0)
         self.curr.add(('fluid', 'velo', 'vol'), velo)
 
         # points on fluid interface
@@ -303,7 +305,7 @@ class svFSI(Simulation):
             q = 1.0
 
         # calculate wss from const Poiseuille flow
-        wss = 4.0 * 0.04 * q / np.pi / rad[map_int] ** 3.0
+        wss = 4.0 * self.p['mu'] * q / np.pi / rad[map_int] ** 3.0
         self.curr.add(('fluid', 'wss', 'int'), wss)
 
 
