@@ -9,13 +9,15 @@ import os
 import json
 import shutil
 import platform
+import distro
 
 if platform.system() == 'Darwin':
     usr = '/Users/pfaller/'
-    sys.path.append('/Users/pfaller/work/repos/DataCuration')
-else:
-    usr = '/home/pfaller'
-    sys.path.append('/home/pfaller/work/osmsc/curation_scripts')
+elif platform.system() == 'Linux':
+    if distro.name() == 'CentOS Linux':
+        usr = '/home/users/pfaller/'
+    else:
+        usr = '/home/pfaller/'
 
 from collections import defaultdict
 from vtk.util.numpy_support import numpy_to_vtk as n2v
@@ -24,6 +26,7 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 from simulation import Simulation
 
 # from https://github.com/StanfordCBCL/DataCuration
+sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
 from vtk_functions import read_geo, write_geo, get_points_cells, extract_surface, threshold
 from simulation_io import map_meshes
 
@@ -38,6 +41,24 @@ coords = [[0, 1, 0],
         [1, 0, 0]]
 
 
+def spacing(z, p):
+    zones = np.array(p['zones'])
+    densities = np.array(p['density'])
+
+    # pdb.set_trace()
+    lengths = np.cumsum(zones)
+    bounds = np.cumsum(densities)
+
+    for i in range(len(zones)):
+        a = 0.0
+        if z <= bounds[i]:
+            if i > 0:
+                a += lengths[i - 1]
+                z -= bounds[i - 1]
+            a += z * zones[i] / densities[i]
+            return a
+
+
 class Mesh(Simulation):
     def __init__(self, f_params=None):
         # mesh parameters
@@ -45,11 +66,14 @@ class Mesh(Simulation):
 
         # axial mesh function
         self.f = {}
-        self.f['axi'] = lambda z: z
+        if 'adapt' in self.p:
+            self.f['axi'] = lambda z: spacing(z, self.p['adapt'])
         # self.f['axi'] = lambda z: np.sqrt(z)
         # self.f['axi'] = lambda z: z**2
         # self.f['axi'] = lambda z: np.log(z + 1) / np.log(2)
         # self.f['axi'] = lambda z: np.exp(z ** 2) - 1
+        else:
+            self.f['axi'] = lambda z: z
 
         # size of quadratic mesh
         self.p['n_quad'] = self.p['n_cir'] // 2 + 1
@@ -93,7 +117,8 @@ class Mesh(Simulation):
         self.p['r_outer'] = 0.687
         self.p['height'] = 0.3
 
-        # number of cells in each dimension
+        # options for adaptive mesh
+        self.p['adapt'] = {'zones': [0.4, 0.2, 0.4], 'density': [0.1, 0.8, 0.1]}
 
         # radial g&r layer
         self.p['n_rad_gr'] = 4
@@ -113,6 +138,15 @@ class Mesh(Simulation):
     def validate_params(self):
         assert self.p['n_cir'] // 2 == self.p['n_cir'] / 2, 'number of elements in cir direction must be divisible by two'
         assert self.p['n_rad_tran'] >= self.p['n_cir'] // 2, 'choose number of transition elements at least half the number of cir elements'
+
+        if 'adapt' in self.p:
+            assert np.sum(self.p['adapt']['zones']) == 1.0, 'zones must sum up to one'
+            assert np.sum(self.p['adapt']['density']) == 1.0, 'densities must sum up to one'
+            assert len(self.p['adapt']['zones']) == len(self.p['adapt']['density']), 'zones and densities must have equal length'
+
+            # todo: check if discretization size matches with densities
+            # n_adapt = 0
+            # for i in range(len(self.p['adapt']['zones'])):
 
     def get_surfaces_cyl(self, pid, ia, ir, ic):
         # store surfaces
@@ -399,15 +433,14 @@ class Mesh(Simulation):
         #     # write_geo('test.vtu', vol)
 
 
-def generate_mesh(displacement=None):
-    f_params = 'in/minimal_tube.json'
+def generate_mesh(f_params):
     mesh = Mesh(f_params)
     mesh.generate_points()
     mesh.generate_cells()
     mesh.extract_svFSI()
     mesh.save_params('cylinder.json')
-    return mesh.p['fname']
+    return mesh.p
 
 
 if __name__ == '__main__':
-    generate_mesh()
+    generate_mesh('in/minimal_tube2.json')
