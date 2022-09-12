@@ -25,11 +25,15 @@ from svfsi import svFSI
 
 if platform.system() == 'Darwin':
     usr = '/Users/pfaller/'
+    name = 'mac'
 elif platform.system() == 'Linux':
     if distro.name() == 'CentOS Linux':
         usr = '/home/users/pfaller/'
+        name = 'sherlock'
     else:
         usr = '/home/pfaller/'
+        name = 'heisenberg'
+print('Running on ' + name + '\n')
 
 # from https://github.com/StanfordCBCL/DataCuration
 sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
