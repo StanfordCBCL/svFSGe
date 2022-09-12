@@ -108,33 +108,6 @@ class Mesh(Simulation):
         # file name
         self.p['fname'] = 'tube_' + str(self.p['n_rad_f']) + '+' + str(self.p['n_rad_gr']) + 'x' + str(self.p['n_cir']) + 'x' + str(self.p['n_axi']) + '.vtu'
 
-    def set_params(self):
-        # output folder
-        self.p['f_out'] = 'mesh_tube_fsi'
-
-        # cylinder size
-        self.p['r_inner'] = 0.64678
-        self.p['r_outer'] = 0.687
-        self.p['height'] = 0.3
-
-        # options for adaptive mesh
-        self.p['adapt'] = {'zones': [0.4, 0.2, 0.4], 'density': [0.1, 0.8, 0.1]}
-
-        # radial g&r layer
-        self.p['n_rad_gr'] = 4
-
-        # radial transition layer
-        self.p['n_rad_tran'] = 40
-
-        # circumferential
-        self.p['n_cir'] = 40
-
-        # axial
-        self.p['n_axi'] = 10
-
-        # number of circle segments (1 = full circle, 2 = half circle, ...)
-        self.p['n_seg'] = 4
-
     def validate_params(self):
         assert self.p['n_cir'] // 2 == self.p['n_cir'] / 2, 'number of elements in cir direction must be divisible by two'
         assert self.p['n_rad_tran'] >= self.p['n_cir'] // 2, 'choose number of transition elements at least half the number of cir elements'
