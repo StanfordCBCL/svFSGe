@@ -11,6 +11,7 @@ import scipy
 import shlex
 import subprocess
 import numpy as np
+import distro
 from copy import deepcopy
 from collections import defaultdict
 
