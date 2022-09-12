@@ -443,4 +443,4 @@ def generate_mesh(f_params):
 
 
 if __name__ == '__main__':
-    generate_mesh('in/minimal_tube2.json')
+    generate_mesh('in_geo/minimal_tube2.json')

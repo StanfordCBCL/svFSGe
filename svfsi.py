@@ -23,7 +23,10 @@ from cylinder import generate_mesh
 if platform.system() == 'Darwin':
     usr = '/Users/pfaller/'
 elif platform.system() == 'Linux':
-    usr = '/home/pfaller/'
+    if distro.name() == 'CentOS Linux':
+        usr = '/home/users/pfaller/'
+    else:
+        usr = '/home/pfaller/'
 
 # from https://github.com/StanfordCBCL/DataCuration
 sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
