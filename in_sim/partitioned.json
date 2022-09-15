@@ -1,23 +1,35 @@
 {
-    "coup": {
-        "nmax": 200,
-        "nmin": 1,
-        "omega0": 0.5,
-        "tol": 0.0001
-    },
+    "fsi": false,
     "debug": false,
-    "exe": {
-        "fluid": "work/repos/svFSI_test/build/svFSI-build/bin/svFSI",
-        "mesh": "work/repos/svFSI_clean/build/svFSI-build/bin/svFSI",
-        "solid": "work/repos/svFSI_fork/build/svFSI-build/bin/svFSI"
+    "mesh": "in_geo/tube_adapt.json",
+    "n_procs": {
+        "fluid": 10,
+        "mesh": 10,
+        "solid": 1
     },
     "fluid": {
         "mu": 4e-06,
         "p0": 13.9868,
         "q0": 1000.0
     },
+    "n_max": {
+        "fluid": 10,
+        "mesh": 10,
+        "solid": 1
+    },
+    "coup": {
+        "nmax": 200,
+        "nmin": 1,
+        "omega0": 0.5,
+        "tol": 0.0001
+    },
+    "nmax": 10,
     "fmax": 1.0,
-    "fsi": true,
+    "exe": {
+        "fluid": "work/repos/svFSI_test/build/svFSI-build/bin/svFSI",
+        "mesh": "work/repos/svFSI_clean/build/svFSI-build/bin/svFSI",
+        "solid": "work/repos/svFSI_fork/build/svFSI-build/bin/svFSI"
+    },
     "inp": {
         "fluid": "steady_flow.inp",
         "mesh": "mesh.inp",
@@ -32,18 +44,6 @@
         "load_pressure": "interface_pressure.vtp",
         "load_wss": "interface_wss.vtp"
     },
-    "mesh": "in_geo/tube_adapt.json",
-    "n_max": {
-        "fluid": 10,
-        "mesh": 10,
-        "solid": 1
-    },
-    "n_procs": {
-        "fluid": 10,
-        "mesh": 10,
-        "solid": 1
-    },
-    "nmax": 10,
     "out": {
         "fluid": "steady",
         "mesh": "mesh",
