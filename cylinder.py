@@ -226,6 +226,9 @@ class Mesh(Simulation):
                     self.get_surfaces_cyl(pid, ia, self.p['n_rad_tran'] + ir - 1, ic)
                     pid += 1
 
+        # add curve
+        self.points[:, 0] += self.p['curve'] * np.sin(self.points[:, 2] / np.max(self.points[:, 2]) * np.pi)
+
     def generate_cells(self):
         cid = 0
 
@@ -416,4 +419,4 @@ def generate_mesh(f_params):
 
 
 if __name__ == '__main__':
-    generate_mesh('in_geo/minimal_tube2.json')
+    generate_mesh('in_geo/minimal_tube_curved.json')
