@@ -7,9 +7,10 @@ import pdb
 import os
 import scipy.optimize
 import numpy as np
+import matplotlib.pyplot as plt
 
 
-def LaplaceMean(ro = None,lz = None,input_ = None):
+def LaplaceMean(ro, lz, input_):
     #**	it computes the distensional Pressure (P) from the Laplace
     #	equilibrium equation for given:
     #	- current outer radius (ro)
@@ -40,7 +41,7 @@ def LaplaceMean(ro = None,lz = None,input_ = None):
     return P
 
 
-def MeandL(par=None, Pl=None, input_=None):
+def MeandL(par, Pl, input_):
     # **	it generates diameter-Force data from a Pd test for given:
     #	- mean mechanical properties (par)
     #	- pairs of Pressure-stretch measurements (Pl)
@@ -67,14 +68,19 @@ def MeandL(par=None, Pl=None, input_=None):
 
     inputLap = np.array([c, c1t, c2t, c1d, c2d, alp, ritf, rotf])
 
+    xtol = 1e-12
+
     for i in np.arange(len(P)):
         if (i > 1):
             r0 = ro[i - 1]
         # * solve non-linear equilibrium equation for given P and lz -> ro
-        ro[i], info, eF, msg = scipy.optimize.fsolve(lambda r: P[i] - LaplaceMean(r, lz[i], inputLap), r0, full_output=True)
+        ro[i], info, eF, msg = scipy.optimize.fsolve(lambda r: P[i] - LaplaceMean(r, lz[i], inputLap), r0,
+                                                     xtol=xtol, full_output=True)
         exitflag[i] = eF
         funvalue[i] = info['fvec']
-        if not eF:
+
+        if info['fvec'] > xtol or eF != 1:
+            ro[i] = np.nan
             print(msg)
 
     # ** current geometry is known at each deformation state from incompressibility
@@ -100,10 +106,55 @@ def MeandL(par=None, Pl=None, input_=None):
     return dL
 
 
-def run():
+def run_forward():
     mmHg_to_kPa = 0.133322
 
-    rotf0 = 0.444
+    # Po = np.array([104.2 * mmHg_to_kPa])
+    Po = np.array([104.9 * mmHg_to_kPa]) # Original homeostatic pressure to get 0 displacement [kPa]
+
+    output = get_geometry(Po)
+    for k, v in output.items():
+        print(k, '\t\t', v)
+
+
+def plot():
+    mmhg_to_kpa = 0.133322
+    po = np.linspace(0, 200, 200) * mmhg_to_kpa
+
+    rio = []
+    for p in po:
+        rio += [get_geometry([p])['rio'][0]]
+
+    fig, ax = plt.subplots(figsize=(40, 10), dpi=200)
+    ax.plot(po / mmhg_to_kpa, rio)
+    ax.grid(True)
+    ax.set_xlabel('Po [mmHg]')
+    ax.set_ylabel('rio [mm]')
+    plt.show()
+
+
+def run_inverse():
+    mmHg_to_kPa = 0.133322
+
+    rio_target = 1.6
+
+    Po_cmame = 104.9 * mmHg_to_kPa
+    Po_ini = 13.332
+
+    m = lambda Po: rio_target - get_geometry([Po])['rio'][0]
+
+    # ro[i], info, eF, msg = scipy.optimize.fsolve(lambda r: P[i] - LaplaceMean(r, lz[i], inputLap), r0, full_output=True)
+    pdb.set_trace()
+    Po, info, flag, msg = scipy.optimize.fsolve(lambda Po: rio_target - get_geometry([Po])['rio'][0], Po_ini, full_output=True)
+
+    output = get_geometry(Po)
+    for k, v in output.items():
+        print(k, '\t\t', v)
+
+
+def get_geometry(Po):
+    # rotf0 = 0.444
+    rotf0 = 0.4
 
     htf = 0.112
 
@@ -112,10 +163,6 @@ def run():
     lzivo = np.array([1.62])
 
     meanpar0 = np.array([18.536, 16.593, 0.108, 25.37, 0.036, 0.078, 1.719, 0.5024])
-
-    Po = np.array([104.2 * mmHg_to_kPa])
-
-    # Po = 104.9*mmHg_to_kPa;							# Original homeostatic pressure to get 0 displacement [kPa]
 
     dLPd = MeandL(meanpar0, np.array([Po, lzivo]), np.array([ritf, rotf0]))
 
@@ -126,15 +173,17 @@ def run():
     ho = roo - rio
 
     # GenCylMesh
-    output = {'Pressre': Po,
-              'Inner radius': rio,
-              'Outer radius': roo,
-              'Thickness': ho}
-    for k, v in output.items():
-        print(k, '\t\t', v)
+    output = {'Po': Po,
+              'rio': rio,
+              'roo': roo,
+              'ho': ho}
+    return output
 
 
 if __name__ == '__main__':
     # rio = 0.6468;	   # 0.6468 | 0.5678 | 0.3984    Inner radius [mm]
     # ho  = 0.0402;	   # 0.0402 | 0.0343 | 0.0288    Thickness [mm]
-    run()
+
+    plot()
+    # run_forward()
+    # run_inverse()
