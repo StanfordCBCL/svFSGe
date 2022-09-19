@@ -35,7 +35,14 @@ from vtk_functions import read_geo, write_geo, calculator, extract_surface, clea
 
 
 # names of fields in SimVascular
-sv_names = {'disp': 'Displacement', 'press': 'Pressure', 'velo': 'Velocity', 'wss': 'WSS'}
+sv_names = {'disp': 'Displacement',
+            'press': 'Pressure',
+            'velo': 'Velocity',
+            'wss': 'WSS',
+            'jac': 'Jacobian',
+            'cauchy': 'Cauchy_stress',
+            'stress': 'Stress',
+            'strain': 'Strain'}
 
 
 class svFSI(Simulation):
@@ -205,6 +212,8 @@ class svFSI(Simulation):
             if k == 'exe':
                 exe += usr
             exe += str(self.p[k][name]) + ' '
+            if k == 'n_procs':
+                exe += '--use-hwthread-cpus '
         with open(os.path.join(self.p['root'], name + '_' + str(i).zfill(3) + '.log'), 'w') as f:
             if self.p['debug']:
                 print(exe)
@@ -229,7 +238,7 @@ class svFSI(Simulation):
         src = fname + str(self.p['n_max'][domain]).zfill(3) + '.vtu'
         if domain == 'solid':
             # read current iteration
-            fields = ['disp']
+            fields = ['disp', 'jac', 'cauchy', 'stress', 'strain']
             src = fname + i_str + '.vtu'
         elif domain == 'fluid':
             # read converged steady state flow
@@ -328,12 +337,17 @@ class Solution:
 
         dim_vec = self.sim.points[('vol', 'tube')].shape
         dim_sca = dim_vec[0]
+        dim_ten = (dim_sca, 6)
 
         # "zero" vectors. use nan where quantity is not defined
         self.zero = {'disp': np.zeros(dim_vec),
                      'velo': np.zeros(dim_vec),
                      'wss': np.ones(dim_sca) * np.nan,
-                     'press': np.zeros(dim_sca) * np.nan}
+                     'press': np.zeros(dim_sca) * np.nan,
+                     'jac': np.zeros(dim_sca) * np.nan,
+                     'cauchy': np.zeros(dim_ten) * np.nan,
+                     'stress': np.zeros(dim_ten) * np.nan,
+                     'strain': np.zeros(dim_ten) * np.nan}
         self.fields = self.zero.keys()
 
         # initialize everything to zero
@@ -363,7 +377,7 @@ class Solution:
         d, f, p = kind
 
         map_v = self.sim.map(((p, d), ('vol', 'tube')))
-        if f in ['disp', 'velo', 'press']:
+        if f in ['disp', 'velo', 'press', 'jac', 'cauchy', 'stress', 'strain']:
             self.sol[f][map_v] = deepcopy(sol)
         elif f == 'wss':
             # wss in tube volume
@@ -377,7 +391,7 @@ class Solution:
             map_trg = self.sim.map((('vol', 'solid'), ('vol', 'tube')))
             self.sol[f][map_trg] = deepcopy(sol_int[map_src])
         else:
-            raise ValueError(f + ' not in fields ' + self.fields)
+            raise ValueError(f + ' not in fields ' + str(list(self.fields)))
 
     def get(self, kind):
         # fluid, solid, tube
