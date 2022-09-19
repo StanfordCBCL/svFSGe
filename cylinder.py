@@ -227,7 +227,9 @@ class Mesh(Simulation):
                     pid += 1
 
         # add curve
-        self.points[:, 0] += self.p['curve'] * np.sin(self.points[:, 2] / np.max(self.points[:, 2]) * np.pi)
+        if 'curve' in self.p:
+            curve = np.cos(self.points[:, 2] / np.max(self.points[:, 2]) * 2.0 * np.pi)
+            self.points[:, 0] += self.p['curve'] * (1.0 - curve) / 2.0
 
     def generate_cells(self):
         cid = 0

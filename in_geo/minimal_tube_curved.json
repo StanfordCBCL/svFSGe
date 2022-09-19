@@ -3,10 +3,10 @@
     "r_inner": 0.64678,
     "r_outer": 0.687,
     "height": 15.0,
-    "n_seg": 4,
-    "n_axi": 12,
-    "n_cir": 6,
-    "n_rad_gr": 1,
-    "n_rad_tran": 3,
-    "curve": 0.3
+    "n_seg": 2,
+    "n_axi": 60,
+    "n_cir": 16,
+    "n_rad_gr": 4,
+    "n_rad_tran": 8,
+    "curve": 0.05
 }
