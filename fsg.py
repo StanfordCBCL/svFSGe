@@ -56,6 +56,7 @@ class FSG(svFSI):
             pass
 
         # archive results
+        pdb.set_trace()
         self.archive()
 
     def main(self):
@@ -156,11 +157,9 @@ class FSG(svFSI):
             # no relaxation necessary during prestressing (prestress does not depend on wss)
             self.p['coup']['omega'] = 1.0
         else:
-            if t == 1:
-                self.p['coup']['omega'] = self.p['coup']['omega0'] / 2.0
-            else:
-                self.p['coup']['omega'] = self.p['coup']['omega0']
-            # self.p['coup']['omega'] = self.coup_aitken(('tube', 'disp', 'vol'))
+            self.p['coup']['omega'] = self.p['coup']['omega0']
+            # if t == 1:
+            #     self.p['coup']['omega'] /= 2.0
 
         # copy previous solution
         self.prev = self.curr.copy()
@@ -195,11 +194,24 @@ class FSG(svFSI):
                 return
 
     def coup_predict(self, i, t, n):
-        kind = ('solid', 'wss', 'vol')
-        # sol = self.predictor_tube(kind, t)
-        # if sol is None:
-        sol = self.predictor(kind, t)
+        if self.p['fsi']:
+            # predict wss
+            kind = ('fluid', 'wss', 'vol')
+        else:
+            # predict displacements
+            kind = ('solid', 'disp', 'vol')
+
+        if t == 0 or not self.p['predict_file']:
+            # extrapolate from previous time step(s)
+            sol = self.predictor(kind, t)
+        else:
+            # predict from file
+            sol = self.predictor_tube(kind, t)
         self.curr.add(kind, sol)
+
+        # calculate wss from poiseuille flow
+        if not self.p['fsi']:
+            self.poiseuille(t)
 
     def predictor(self, kind, t):
         # fluid, solid, tube
@@ -237,8 +249,8 @@ class FSG(svFSI):
 
     def predictor_tube(self, kind, t):
         d, f, p = kind
-        # fname = 'gr_partitioned/tube_' + str(t).zfill(3) + '.vtu'
-        fname = 'gr/gr_' + str(t + 1).zfill(3) + '.vtu'
+        fname = 'gr_partitioned/tube_' + str(t).zfill(3) + '.vtu'
+        # fname = 'gr/gr_' + str(t + 1).zfill(3) + '.vtu'
         if not os.path.exists(fname):
             return None
         geo = read_geo(fname).GetOutput()
