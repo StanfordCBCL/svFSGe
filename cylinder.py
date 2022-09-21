@@ -76,10 +76,18 @@ class Mesh(Simulation):
             self.f['axi'] = lambda z: z
 
         # size of quadratic mesh
-        self.p['n_quad'] = self.p['n_cir'] // 2 + 1
+        if self.p['n_seg'] == 4:
+            # number of layers in quadratic mesh
+            self.p['n_quad'] = self.p['n_cir'] // 2 + 1
 
-        # number of layers in fluid mesh
-        self.p['n_rad_f'] = self.p['n_quad'] + self.p['n_rad_tran']
+            # number of layers in fluid mesh
+            self.p['n_rad_f'] = self.p['n_quad'] + self.p['n_rad_tran']
+        if self.p['n_seg'] == 1:
+            # number of layers in quadratic mesh
+            self.p['n_quad'] = self.p['n_cir'] // 4 + 1
+
+            # number of layers in fluid mesh
+            self.p['n_rad_f'] = self.p['n_quad'] + self.p['n_rad_tran'] * 2
 
         # number of cells in circumferential direction (one more if the circle is closed)
         self.p['n_cell_cir'] = self.p['n_cir']
@@ -109,8 +117,15 @@ class Mesh(Simulation):
         self.p['fname'] = 'tube_' + str(self.p['n_rad_f']) + '+' + str(self.p['n_rad_gr']) + 'x' + str(self.p['n_cir']) + 'x' + str(self.p['n_axi']) + '.vtu'
 
     def validate_params(self):
-        assert self.p['n_cir'] // 2 == self.p['n_cir'] / 2, 'number of elements in cir direction must be divisible by two'
-        assert self.p['n_rad_tran'] >= self.p['n_cir'] // 2, 'choose number of transition elements at least half the number of cir elements'
+        if self.p['n_seg'] == 1:
+            assert divisible(self.p['n_cir'], 8), 'number of elements in cir direction must be divisible by eight'
+            assert self.p['n_rad_tran'] >= self.p['n_cir'] // 4, 'choose number of transition elements at least a quarter the number of cir elements'
+        elif self.p['n_seg'] == 4:
+            assert divisible(self.p['n_cir'], 2), 'number of elements in cir direction must be divisible by two'
+            assert self.p['n_rad_tran'] >= self.p['n_cir'] // 2, 'choose number of transition elements at least half the number of cir elements'
+        else:
+            raise ValueError('FSI mesh only possible for full or quarter circles')
+        assert divisible(self.p['n_rad_tran'], 2), 'number of transition elements must be divisible by two'
 
         if 'adapt' in self.p:
             assert np.sum(self.p['adapt']['zones']) == 1.0, 'zones must sum up to one'
@@ -157,16 +172,28 @@ class Mesh(Simulation):
         pid = 0
 
         # generate quadratic mesh
+        rad = self.p['r_inner'] / (self.p['n_rad_f'] - 1)
+        delta = (self.p['n_quad'] - 1) * self.p['r_inner'] / (self.p['n_rad_f'] - 1)
+
+        # offset from center
+        if self.p['n_seg'] == 1:
+            x0 = -delta
+            y0 = -delta
+            rad *= 2.0
+        elif self.p['n_seg'] == 4:
+            x0 = 0.0
+            y0 = 0.0
+        else:
+            raise ValueError('not implemented for n_seg=' + str(self.p['n_seg']))
+
         for ia in range(self.p['n_axi'] + 1):
+            axi = self.p['height'] * self.f['axi'](ia / self.p['n_axi'])
             for iy in range(self.p['n_quad']):
                 for ix in range(self.p['n_quad']):
-                    axi = self.p['height'] * self.f['axi'](ia / self.p['n_axi'])
-                    rad = self.p['r_inner'] / (self.p['n_rad_f'] - 1)
-                    
-                    self.points[pid] = [ix * rad, iy * rad, axi]
-
+                    self.points[pid] = [x0 + ix * rad, y0 + iy * rad, axi]
                     self.get_surfaces_cart(pid, ia, ix, iy)
                     pid += 1
+            # pdb.set_trace()
 
         # generate transition mesh
         for ia in range(self.p['n_axi'] + 1):
@@ -184,16 +211,24 @@ class Mesh(Simulation):
 
                     # transition from quad mesh to circular mesh
                     i_trans = (ir + 1) / self.p['n_rad_tran']
-                    if ic <= self.p['n_cell_cir'] // 2:
-                        rad_mod = rad * ((1 - i_trans)**2 / np.cos(cir) + 2*i_trans - i_trans**2)
+
+                    # in which octant is the point located?
+                    oct = int((ic / self.p['n_cell_cir'] / self.p['n_seg']) * 8.0) % 8
+
+                    # check if point not on axis
+                    if (ic * 4.0 / self.p['n_cell_cir'] / self.p['n_seg']) % 1 != 0:
+                        if oct % 2 == 0:
+                            rad_mod = rad * ((1 - i_trans)**2 / np.cos(cir % (np.pi / 2.0)) + 2*i_trans - i_trans**2)
+                        else:
+                            rad_mod = rad * ((1 - i_trans)**2 / np.sin(cir % (np.pi / 2.0)) + 2*i_trans - i_trans**2)
                     else:
-                        rad_mod = rad * ((1 - i_trans)**2 / np.sin(cir) + 2*i_trans - i_trans**2)
+                        rad_mod = rad
                     self.points[pid] = [rad_mod * np.cos(cir), rad_mod * np.sin(cir), axi]
 
                     self.get_surfaces_cyl(pid, ia, ir, ic)
                     pid += 1
 
-        # generate circular g&r mesh
+            # generate circular g&r mesh
             for ir in range(self.p['n_rad_gr'] + 1):
                 for ic in range(self.p['n_point_cir']):
                     # cylindrical coordinate system
@@ -249,20 +284,76 @@ class Mesh(Simulation):
         for ia in range(self.p['n_axi']):
             for ic in range(self.p['n_cell_cir']):
                 ids = []
+
+                # number of segments per quad edge
+                ns = self.p['n_cell_cir'] * self.p['n_seg'] // 4
+
+                # quad edges (looking in negative z): 0: east, 1: north, 2: west, 3: south
+                qua = int((ic + self.p['n_cell_cir']//8) / self.p['n_cell_cir'] / self.p['n_seg'] * 4.0) % 4
+
+                # circumferential coordinate along each quad edge
+                icq = (ic + ns // 2 - qua * ns) % self.p['n_cell_cir']
+
+                # loop element nodes
                 for c in coords:
+                    # quarter circle
+                    if self.p['n_seg'] == 4:
+                        # circular side
                         if c[1] == 1:
-                            # circular side
-                            ids += [ic + c[0] + (self.p['n_axi'] + 1) * self.p['n_quad'] ** 2 + (ia + c[2]) * (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir']]
+                            ids += [ic + c[0] + (self.p['n_axi'] + 1) * self.p['n_quad'] ** 2 + (ia + c[2]) * (
+                                        self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir']]
+
+                        # quadratic side
                         else:
-                            # quadratic side
                             if ic < self.p['n_cell_cir'] // 2:
-                                ids += [self.p['n_quad'] - 1 + (ic + c[0]) * self.p['n_quad'] + (ia + c[2]) * self.p['n_quad'] ** 2]
+                                ids += [self.p['n_quad'] - 1 + (ic + c[0]) * self.p['n_quad'] + (ia + c[2]) * self.p[
+                                    'n_quad'] ** 2]
                             else:
-                                ids += [self.p['n_quad'] ** 2 - 1 + self.p['n_cell_cir'] // 2 - ic - c[0] + (ia + c[2]) * self.p['n_quad'] ** 2]
+                                ids += [
+                                    self.p['n_quad'] ** 2 - 1 + self.p['n_cell_cir'] // 2 - ic - c[0] + (ia + c[2]) *
+                                    self.p['n_quad'] ** 2]
+                    # full circle
+                    elif self.p['n_seg'] == 1:
+                        # circular side
+                        if c[1] == 1:
+                            # starting node
+                            offset = (self.p['n_axi'] + 1) * self.p['n_quad'] ** 2
+
+                            # axial step
+                            fa = (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir']
+
+                            # closing the circle
+                            if qua == 0 and ic + c[0] == self.p['n_cell_cir']:
+                                fc = 0
+                            else:
+                                fc = 1
+                            ids += [offset + (ic + c[0]) * fc + (ia + c[2]) * fa]
+                        # quadratic side
+                        else:
+                            # axial step
+                            fa = self.p['n_quad'] ** 2
+                            # east
+                            if qua == 0:
+                                offset = self.p['n_quad'] - 1
+                                fc = self.p['n_quad']
+                            # north
+                            elif qua == 1:
+                                offset = self.p['n_quad'] ** 2 - 1
+                                fc = -1
+                            # west
+                            elif qua == 2:
+                                offset = self.p['n_quad'] * (self.p['n_quad'] - 1)
+                                fc = - self.p['n_quad']
+                            # south
+                            elif qua == 3:
+                                offset = 0
+                                fc = 1
+                            ids += [offset + (icq + c[0]) * fc + (ia + c[2]) * fa]
+                    else:
+                        raise ValueError('not implemented for n_seg=' + str(self.p['n_seg']))
                 self.cells[cid] = ids
                 self.vol_dict['fluid'] += [cid]
                 cid += 1
-
         # generate circular g&r mesh
         for ia in range(self.p['n_axi']):
             for ir in range(self.p['n_rad_tran'] + self.p['n_rad_gr'] - 1):
@@ -419,6 +510,8 @@ def generate_mesh(f_params):
     mesh.save_params('cylinder.json')
     return mesh.p
 
+def divisible(f, i):
+    return f // i == f / i
 
 if __name__ == '__main__':
-    generate_mesh('in_geo/minimal_tube_curved.json')
+    generate_mesh('in_geo/minimal_tube_full.json')
