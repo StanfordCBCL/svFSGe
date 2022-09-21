@@ -1,7 +1,7 @@
 {
     "fsi": false,
     "debug": false,
-    "mesh": "in_geo/tube_adapt.json",
+    "mesh": "in_geo/fsg_medium.json",
     "n_procs": {
         "fluid": 10,
         "mesh": 10,
@@ -21,17 +21,18 @@
         "nmax": 200,
         "nmin": 1,
         "omega0": 0.5,
-        "tol": 0.0001
+        "tol": 1.0e-3
     },
     "nmax": 10,
     "fmax": 1.0,
+    "predict_file": false,
     "exe": {
         "fluid": "work/repos/svFSI_test/build/svFSI-build/bin/svFSI",
         "mesh": "work/repos/svFSI_clean/build/svFSI-build/bin/svFSI",
         "solid": "work/repos/svFSI_fork/build/svFSI-build/bin/svFSI"
     },
     "inp": {
-        "fluid": "steady_flow.inp",
+        "fluid": "steady.inp",
         "mesh": "mesh.inp",
         "solid": "gr_restart.inp"
     },
