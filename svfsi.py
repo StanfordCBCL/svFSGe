@@ -287,29 +287,45 @@ class svFSI(Simulation):
         q = self.p['fluid']['q0']
         p = self.p['fluid']['p0'] * self.p_vec[t]
 
-        # fluid mesh points
-        points_f = deepcopy(self.points[('vol', 'fluid')]) + deepcopy(self.curr.get(('fluid', 'disp', 'vol')))
+        # fluid mesh points in reference configuration
+        points_r = deepcopy(self.points[('vol', 'fluid')])
+
+        # fluid mesh points in current configuration
+        points_f = deepcopy(points_r) + deepcopy(self.curr.get(('fluid', 'disp', 'vol')))
+        n_points = points_f.shape[0]
 
         # normalized axial coordinate
         ax = deepcopy(points_f[:, 2])
         amax = np.max(ax)
         ax /= amax
 
-        # normalized radial coordinate
+        # radial coordinate of all points
         rad = np.sqrt(points_f[:, 0] ** 2 + points_f[:, 1] ** 2)
-        rmax = np.max(rad)
-        rad_norm = rad / rmax
+
+        # minimum interface radius
+        rmin = np.min(rad[self.map((('int', 'fluid'), ('vol', 'fluid')))])
 
         # estimate Poiseuille resistance
-        res = 8.0 * self.p['fluid']['mu'] * amax / np.pi / rmax ** 4
+        res = 8.0 * self.p['fluid']['mu'] * amax / np.pi / rmin ** 4
 
         # estimate linear pressure gradient
         press = p * np.ones(len(rad)) + res * q * (1.0 - ax)
         self.curr.add(('fluid', 'press', 'vol'), press)
 
+        # get local cross-sectional area and maximum radius (assuming a regular mesh)
+        z_slices = np.unique(points_r[:,2])
+        areas = np.zeros(n_points)
+        rad_norm = np.zeros(n_points)
+        for z in z_slices:
+            i_slice = points_r[:, 2] == z
+            rmax = np.max(rad[i_slice])
+            areas[i_slice] = rmax ** 2.0 * np.pi
+            rad_norm[i_slice] = rad[i_slice] / rmax
+        assert not np.any(areas == 0.0), 'area zero'
+
         # estimate quadratic flow profile
         velo = np.zeros(points_f.shape)
-        velo[:, 2] = q / (rmax ** 2.0 * np.pi) * 2.0 * (1.0 - rad_norm ** 2.0)
+        velo[:, 2] = q / areas * 2.0 * (1.0 - rad_norm ** 2.0)
         self.curr.add(('fluid', 'velo', 'vol'), velo)
 
         # points on fluid interface
