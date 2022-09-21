@@ -158,8 +158,10 @@ class FSG(svFSI):
             self.p['coup']['omega'] = 1.0
         else:
             self.p['coup']['omega'] = self.p['coup']['omega0']
-            # if t == 1:
-            #     self.p['coup']['omega'] /= 2.0
+
+            # half relaxation for first fsi time step since no good predictor is available
+            if self.p['fsi'] and t == 1:
+                self.p['coup']['omega'] /= 2.0
 
         # copy previous solution
         self.prev = self.curr.copy()
@@ -298,7 +300,7 @@ class FSG(svFSI):
             # norm
             if t == 0:
                 # normalize w.r.t. mean radius
-                norm = np.mean(rad(self.points[('int', 'solid')]))
+                norm = np.mean(np.abs(rad(self.points[('int', 'solid')])))
             else:
                 # normalize w.r.t. displacement norm
                 norm = np.max(np.abs(curri))
@@ -348,5 +350,5 @@ def rad(x):
 
 
 if __name__ == '__main__':
-    fsg = FSG('in_sim/partitioned.json')
+    fsg = FSG('in_sim/partitioned_full.json')
     fsg.run()
