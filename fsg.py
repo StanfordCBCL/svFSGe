@@ -152,6 +152,16 @@ class FSG(svFSI):
         # save parameters
         self.save_params(self.p['root'] + '.json')
 
+        # save input files
+        for src in self.p['inp'].values():
+            trg = os.path.join(self.p['f_out'], self.p['root'], src)
+            shutil.copyfile(src, trg)
+
+        # save python scripts
+        for src in ['fsg.py', 'svfsi.py']:
+            trg = os.path.join(self.p['f_out'], self.p['root'], src)
+            shutil.copyfile(src, trg)
+
     def coup_step(self, i, t, n):
         if t == 0:
             # no relaxation necessary during prestressing (prestress does not depend on wss)
@@ -160,8 +170,8 @@ class FSG(svFSI):
             self.p['coup']['omega'] = self.p['coup']['omega0']
 
             # half relaxation for first fsi time step since no good predictor is available
-            if self.p['fsi'] and t == 1:
-                self.p['coup']['omega'] /= 2.0
+            # if self.p['fsi'] and t == 1:
+            #     self.p['coup']['omega'] /= 2.0
 
         # copy previous solution
         self.prev = self.curr.copy()
@@ -178,6 +188,7 @@ class FSG(svFSI):
                 self.poiseuille(t)
 
         # relax pressure update
+        # todo: try in asym aneurysm and see if it gets rid of pressure oscillations (maybe also do for velocity)
         # self.coup_relax('fluid', 'press', i, t, ini)
 
         # relax wss update
