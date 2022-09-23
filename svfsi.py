@@ -75,6 +75,8 @@ class svFSI(Simulation):
             self.mesh[('int', d)] = read_geo('mesh_tube_fsi/' + d + '/mesh-surfaces/interface.vtp').GetOutput()
             self.mesh[('vol', d)] = read_geo('mesh_tube_fsi/' + d + '/mesh-complete.mesh.vtu').GetOutput()
         self.mesh[('vol', 'tube')] = read_geo('mesh_tube_fsi/' + self.mesh_p['fname']).GetOutput()
+        if self.p['tortuosity']:
+            self.mesh[('int', 'perturbation')] = read_geo('mesh_tube_fsi/' + d + '/mesh-surfaces/tortuosity.vtp').GetOutput()
 
         # read points
         self.points = {}
@@ -193,6 +195,18 @@ class svFSI(Simulation):
         name = 'Pressure'
         add_array(geo, num, name)
         write_geo(self.p['interfaces']['load_pressure'], geo)
+
+        # write interface pressure perturbation to file
+        if self.p['tortuosity']:
+            geo = self.mesh[('int', 'perturbation')]
+            if t == 0:
+                perturb = 0.0
+            else:
+                perturb = 0.01 * self.p['fluid']['p0']
+            num = perturb * np.ones(geo.GetNumberOfPoints())
+            name = 'Pressure'
+            add_array(geo, num, name)
+            write_geo(self.p['interfaces']['load_perturbation'], geo)
 
     def step(self, name, i, t):
         if name not in self.fields:
