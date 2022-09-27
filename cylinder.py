@@ -27,7 +27,7 @@ from simulation import Simulation
 
 # from https://github.com/StanfordCBCL/DataCuration
 sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
-from vtk_functions import read_geo, write_geo, get_points_cells, extract_surface, threshold
+from vtk_functions import read_geo, write_geo, get_points_cells, extract_surface, threshold, clean, cut_plane
 from simulation_io import map_meshes
 
 # cell vertices in (cir, rad, axi)
@@ -153,6 +153,22 @@ class Mesh(Simulation):
                 self.surf_dict['y_zero'] += [pid]
             if ic == self.p['n_point_cir'] - 1:
                 self.surf_dict['x_zero'] += [pid]
+
+        if self.p['n_seg'] == 1:
+            # surfaces to apply tortuosity perturbation
+            if ir == self.p['n_rad_tran'] - 1:
+                if abs(ia - self.p['n_axi'] // 4) <= 1 and abs(ic - 3 * self.p['n_point_cir'] // 4) <= 1:
+                    self.surf_dict['tortuosity'] += [pid]
+                if abs(ia - 3 * self.p['n_axi'] // 4) <= 1 and abs(ic - self.p['n_point_cir'] // 4) <= 1:
+                    self.surf_dict['tortuosity'] += [pid]
+
+            # surfaces to prevent x- and y-movement
+            if ia <= 1 or ia >= self.p['n_axi'] - 1:
+                if ic == self.p['n_point_cir'] // 4 or ic == 3 * self.p['n_point_cir'] // 4:
+                    self.surf_dict['x_zero'] += [pid]
+                if ic == self.p['n_point_cir'] // 2 or ic == 0:
+                    self.surf_dict['y_zero'] += [pid]
+            # pdb.set_trace()
 
     def get_surfaces_cart(self, pid, ia, ix, iy):
         # store surfaces
@@ -367,14 +383,20 @@ class Mesh(Simulation):
                         self.vol_dict['fluid'] += [cid]
                     else:
                         self.vol_dict['solid'] += [cid]
+                    if self.p['n_seg'] == 1:
+                        if ic < self.p['n_cell_cir'] // 2:
+                            self.vol_dict['y_seg'] += [cid]
+                        if ic < self.p['n_cell_cir'] // 4 or ic >= self.p['n_cell_cir'] // 4 * 3:
+                            self.vol_dict['x_seg'] += [cid]
                     cid += 1
+
 
         # assemble point data
         self.point_data = {'GlobalNodeID': np.arange(len(self.points)) + 1,
                       'FIB_DIR': np.array(self.fiber_dict['rad']),
                       'varWallProps': self.cosy}
         for name, ids in self.surf_dict.items():
-            self.point_data['ids_' + name] = np.zeros(len(self.points))
+            self.point_data['ids_' + name] = np.zeros(len(self.points), dtype=int)
             self.point_data['ids_' + name][ids] = 1
 
         # assemble cell data
@@ -430,16 +452,36 @@ class Mesh(Simulation):
 
             # threshold surfaces
             for name in self.surf_dict.keys():
+                # interior quad elements
+                if self.p['n_seg'] == 1 and '_zero' in name:
+                    # threshold circle segments first
+                    thresh = vtk.vtkThreshold()
+                    thresh.SetInputData(vol_f)
+                    thresh.SetInputArrayToProcess(0, 0, 0, 1, 'ids_' + name[0] + '_seg')
+                    thresh.SetUpperThreshold(1)
+                    thresh.SetLowerThreshold(1)
+                    thresh.Update()
+
+                    # extract surfaces
+                    extract = vtk.vtkGeometryFilter()
+                    extract.SetInputData(thresh.GetOutput())
+                    extract.SetNonlinearSubdivisionLevel(0)
+                    extract.Update()
+                    inp = extract.GetOutput()
+                else:
+                    inp = surfaces
+
                 # select only current surface
                 thresh = vtk.vtkThreshold()
-                thresh.SetInputData(surfaces)
+                thresh.SetInputData(inp)
                 thresh.SetInputArrayToProcess(0, 0, 0, 0, 'ids_' + name)
                 thresh.SetUpperThreshold(1)
                 thresh.SetLowerThreshold(1)
                 thresh.Update()
                 surf = thresh.GetOutput()
+                if surf.GetNumberOfPoints() > 0:
+                    surf = clean(extract_surface(surf))
 
-                # export to file
                 fout = os.path.join(self.p['f_out'], f, 'mesh-surfaces', name + '.vtp')
                 write_geo(fout, extract_surface(surf))
 
