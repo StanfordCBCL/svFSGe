@@ -82,6 +82,7 @@ class FSG(svFSI):
                 # get error
                 self.coup_err('solid', 'disp', i, t, n)
                 self.coup_err('fluid', 'wss', i, t, n)
+                # self.coup_err('fluid', 'press', i, t, n)
 
                 # screen output
                 out = 'i ' + str(i) + ' \tn ' + str(n)
@@ -162,6 +163,11 @@ class FSG(svFSI):
             trg = os.path.join(self.p['f_out'], self.p['root'], src)
             shutil.copyfile(src, trg)
 
+        # save material model
+        src = os.path.split(self.p['exe']['solid'])[0] + '/../../../Code/Source/svFSI/FEMbeCmm.cpp'
+        trg = os.path.join(self.p['f_out'], self.p['root'], 'FEMbeCmm.cpp')
+        shutil.copyfile(src, trg)
+
     def coup_step(self, i, t, n):
         if t == 0:
             # no relaxation necessary during prestressing (prestress does not depend on wss)
@@ -189,7 +195,7 @@ class FSG(svFSI):
 
         # relax pressure update
         # todo: try in asym aneurysm and see if it gets rid of pressure oscillations (maybe also do for velocity)
-        # self.coup_relax('fluid', 'press', i, t, ini)
+        # self.coup_relax('fluid', 'press', i, t, n)
 
         # relax wss update
         self.coup_relax('fluid', 'wss', i, t, n)
@@ -292,8 +298,6 @@ class FSG(svFSI):
         self.curr.add((domain, name, 'vol'), vec_relax)
 
     def coup_err(self, domain, name, i, t, n):
-        curr = deepcopy(self.curr.get((domain, name, 'vol')))
-        # prev = deepcopy(self.prev.get((domain, name, 'vol')))
         curri = deepcopy(self.curr.get((domain, name, 'int')))
         previ = deepcopy(self.prev.get((domain, name, 'int')))
         if i == 1 or n == 0:
