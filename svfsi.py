@@ -8,6 +8,7 @@ import shutil
 import datetime
 import platform
 import scipy
+import scipy.stats
 import shlex
 import subprocess
 import numpy as np
@@ -75,6 +76,7 @@ class svFSI(Simulation):
             self.mesh[('int', d)] = read_geo('mesh_tube_fsi/' + d + '/mesh-surfaces/interface.vtp').GetOutput()
             self.mesh[('vol', d)] = read_geo('mesh_tube_fsi/' + d + '/mesh-complete.mesh.vtu').GetOutput()
         self.mesh[('vol', 'tube')] = read_geo('mesh_tube_fsi/' + self.mesh_p['fname']).GetOutput()
+        self.mesh[('int', 'inlet')] = read_geo('mesh_tube_fsi/fluid/mesh-surfaces/start.vtp').GetOutput()
         if self.p['tortuosity']:
             self.mesh[('int', 'perturbation')] = read_geo('mesh_tube_fsi/' + d + '/mesh-surfaces/tortuosity.vtp').GetOutput()
 
@@ -156,6 +158,9 @@ class svFSI(Simulation):
 
         # write geometry to file
         write_geo(os.path.join(self.p['root'], self.p['interfaces']['geo_fluid']), warp.GetOutput())
+
+        # write inflow profile
+        self.write_profile(t)
 
     def set_mesh(self):
         # write general bc file
@@ -296,7 +301,64 @@ class svFSI(Simulation):
 
         return False
 
-    def poiseuille(self, t):
+    def get_profile(self, x_norm, rad_norm, t):
+        # quadratic flow profile (integrates to one, zero on the FS-interface)
+        u_profile = 2.0 * (1.0 - rad_norm ** 2.0)
+
+        # custom flow profile
+        if 'profile' in self.p:
+            # time factor
+            f_time = t / (self.p['nmax'] + 1.0)
+
+            # limits
+            beta_min = self.p['profile']['beta_min']
+            beta_max = self.p['profile']['beta_max']
+
+            # beta distribution for x-bias
+            beta = beta_min + (beta_max - beta_min) * f_time
+            bias = scipy.stats.beta.pdf(x_norm, 2, beta)
+            bias0 = scipy.stats.beta.pdf(x_norm, 2, beta_min)
+
+            # normalize with initial profile
+            pos = bias0 != 0.0
+            bias[pos] /= bias0[pos]
+
+            u_profile *= bias
+        return u_profile
+
+    def write_profile(self, t):
+        # GlobalNodeID of inlet within fluid mesh
+        i_inlet = self.map((('int', 'inlet'), ('vol', 'fluid')))
+
+        # inlet points in current configuration
+        points = deepcopy(self.points[('vol', 'fluid')])[i_inlet]
+
+        # radial coordinate [0, 1]
+        rad = np.sqrt(points[:, 0]**2 + points[:, 1]**2)
+        rad_norm = rad / np.max(rad)
+        area = np.max(rad)**2 * np.pi
+
+        # normalized x coordinate [0, 1]
+        x = points[:, 0]
+        x_norm = (1.0 + x / np.max(x)) / 2.0
+
+        # get flow profile at inlet
+        u_profile = 1.0 / area * self.get_profile(x_norm, rad_norm, t)
+
+        # import matplotlib.pyplot as plt
+        # fig = plt.figure()
+        # ax = fig.add_subplot(projection='3d')
+        # ax.scatter(points[:, 0], points[:, 1], u_profile)
+        # plt.show()
+        # pdb.set_trace()
+        # export inflow profile: GlobalNodeID, weight
+        with open('inflow_profile.dat', 'w') as file:
+            for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
+                file.write(str(i + 1) + ' ' + str(- v))
+                if line < len(i_inlet) - 1:
+                    file.write('\n')
+
+    def poiseuille(self, t, return_profile=False):
         # fluid flow and pressure
         q = self.p['fluid']['q0']
         p = self.p['fluid']['p0'] * self.p_vec[t]
@@ -313,6 +375,10 @@ class svFSI(Simulation):
         amax = np.max(ax)
         ax /= amax
 
+        # normalized x coordinate [0, 1]
+        x = points_f[:, 0]
+        x_norm = (1.0 + x / np.max(x)) / 2.0
+
         # radial coordinate of all points
         rad = np.sqrt(points_f[:, 0] ** 2 + points_f[:, 1] ** 2)
 
@@ -326,8 +392,8 @@ class svFSI(Simulation):
         press = p * np.ones(len(rad)) + res * q * (1.0 - ax)
         self.curr.add(('fluid', 'press', 'vol'), press)
 
-        # get local cross-sectional area and maximum radius (assuming a regular mesh)
-        z_slices = np.unique(points_r[:,2])
+        # get local cross-sectional area and maximum radius (assuming a structured mesh)
+        z_slices = np.unique(points_r[:, 2])
         areas = np.zeros(n_points)
         rad_norm = np.zeros(n_points)
         for z in z_slices:
@@ -337,9 +403,9 @@ class svFSI(Simulation):
             rad_norm[i_slice] = rad[i_slice] / rmax
         assert not np.any(areas == 0.0), 'area zero'
 
-        # estimate quadratic flow profile
+        # estimate flow profile
         velo = np.zeros(points_f.shape)
-        velo[:, 2] = q / areas * 2.0 * (1.0 - rad_norm ** 2.0)
+        velo[:, 2] = q / areas * self.get_profile(x_norm, rad_norm, t)
         self.curr.add(('fluid', 'velo', 'vol'), velo)
 
         # points on fluid interface
@@ -350,6 +416,7 @@ class svFSI(Simulation):
             q = 1.0
 
         # calculate wss from const Poiseuille flow
+        # todo: use actual profile (and local gradient??)
         wss = 4.0 * self.p['fluid']['mu'] * q / np.pi / rad[map_int] ** 3.0
         self.curr.add(('fluid', 'wss', 'int'), wss)
 
