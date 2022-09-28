@@ -50,17 +50,12 @@ Add equation: struct {
    Coupled: 1
    Min iterations: 1
    Max iterations: 30
-   Tolerance: 1e-8
+   Tolerance: 1e-11
 
    Constitutive model: GR_Equilibrated
-   Density: 0.0
    Elasticity modulus: 1.0e-16
    Poisson ratio: 0.0
-
-#   Constitutive model: stVK
-#   Density: 0.0
-#   Elasticity modulus: 1000.0
-#   Poisson ratio: 0.0
+   Density: 0.0
 
    Output: Spatial {
       Displacement: t
@@ -77,9 +72,9 @@ Add equation: struct {
    LS type: GMRES
    {
       Tolerance:           1e-3
-      Max iterations:      100
+      Max iterations:      50
       Krylov space dimension: 300
-      Preconditioner:  Trilinos-ILUT
+      Preconditioner:  Trilinos-Diagonal
    }
 
    # plane strain
@@ -87,15 +82,19 @@ Add equation: struct {
       Type: Dir
       Value: 0.0
       Effective direction: (0, 0, 1)
-      Impose on state variable integral: t
-      Zero out perimeter: f
    }
    Add BC: end {
       Type: Dir
       Value: 0.0
       Effective direction: (0, 0, 1)
-      Impose on state variable integral: t
-      Zero out perimeter: f
+   }
+
+   # fluid pressure
+   Add BC: inside {
+      Type: Neu
+      Time dependence: Spatial
+      Spatial values file path: interface_pressure.vtp
+      Follower pressure load: t
    }
 
    # embedding tissue
@@ -103,26 +102,8 @@ Add equation: struct {
       Type: Robin
       Time dependence: Steady
       Value: 0.0
-      Stiffness : 3.0
+      Stiffness : 1.0
       Damping: 0.0
       Apply along normal direction: f
    }
-
-   # step 1: pre-stressing
-   Add BC: inside {
-      Type: Neu
-      Time dependence: Unsteady
-      Temporal values file path: load_pre.dat
-      Ramp function: t
-      Follower pressure load: t
-   }
-
-   # step 2: g&r
-#   Add BC: inside {
-#      Type: Neu
-#      Time dependence: Unsteady
-#      Temporal values file path: load_gr.dat
-#      Ramp function: t
-#      Follower pressure load: t
-#   }
 }
