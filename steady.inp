@@ -4,10 +4,9 @@
 Continue previous simulation: 0
 Number of spatial dimensions: 3
 Number of time steps: 10
-Time step size: 0.002
+Time step size: 0.01
 
 #Simulation initialization file path: partitioned/fluid.vtu
-#Simulation initialization file path: initial/steady_020.vtu
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: steady
@@ -43,8 +42,6 @@ Add mesh: fluid {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
    }
    Domain: 0
-#   Initial pressures file path:  partitioned/fluid.vtu
-#   Initial velocities file path: partitioned/fluid.vtu
 }
 
 #----------------------------------------------------------------
@@ -79,15 +76,12 @@ Add equation: fluid {
    # fluid: inflow
    Add BC: f_start {
       Type: Dir
-#      Value: 0.1
-      Impose flux: t
+#      Impose flux: t
       Zero out perimeter: f
-#      Time dependence: Steady
       Time dependence: Unsteady
       Temporal values file path: steady_flow.dat
       Profile: User_defined
       Spatial profile file path: mesh_tube_fsi/inflow_profile.dat
-      Effective direction: (0, 0, 1)
    }
 
    # fluid: symmetry
@@ -117,8 +111,6 @@ Add equation: fluid {
    # fluid: outflow pressure
    Add BC: f_end {
       Type: Neu
-#      Time dependence: Steady
-#      Value: 13.9868
       Time dependence: Unsteady
       Temporal values file path: steady_pressure.dat
    }

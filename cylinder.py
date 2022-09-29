@@ -512,7 +512,7 @@ class Mesh(Simulation):
         # export inflow profile: GlobalNodeID, weight
         with open(os.path.join(self.p['f_out'], 'inflow_profile.dat'), 'w') as file:
             for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
-                file.write(str(i) + ' ' + str(v))
+                file.write(str(i) + ' ' + str(- v))
                 if line < len(i_inlet) - 1:
                     file.write('\n')
 
@@ -556,4 +556,4 @@ def divisible(f, i):
     return f // i == f / i
 
 if __name__ == '__main__':
-    generate_mesh('in_geo/minimal_tube_full.json')
+    generate_mesh('in_geo/minimal_tube3.json')

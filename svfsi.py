@@ -124,7 +124,8 @@ class svFSI(Simulation):
 
     def set_fluid(self, t):
         # fluid flow (scale by number of tube segments)
-        q = self.p['fluid']['q0'] / self.mesh_p['n_seg']
+        # todo: calculate area in current configuration
+        q = self.p['fluid']['q0'] / self.mesh_p['n_seg'] / (self.mesh_p['r_inner']**2 * np.pi)
 
         # fluid pressure (scale by current pressure load step)
         p = self.p['fluid']['p0'] * self.p_vec[t]
@@ -308,7 +309,7 @@ class svFSI(Simulation):
         # custom flow profile
         if 'profile' in self.p:
             # time factor
-            f_time = t / (self.p['nmax'] + 1.0)
+            f_time = t / self.p['nmax']
 
             # limits
             beta_min = self.p['profile']['beta_min']
@@ -360,7 +361,7 @@ class svFSI(Simulation):
 
     def poiseuille(self, t, return_profile=False):
         # fluid flow and pressure
-        q = self.p['fluid']['q0']
+        q = self.p['fluid']['q0'] / self.mesh_p['n_seg']
         p = self.p['fluid']['p0'] * self.p_vec[t]
 
         # fluid mesh points in reference configuration
