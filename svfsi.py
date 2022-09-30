@@ -165,7 +165,7 @@ class svFSI(Simulation):
 
     def set_mesh(self):
         # write general bc file
-        sol = self.curr.get(('solid', 'disp', 'int'))
+        sol = self.curr.get(('fluid', 'disp', 'int'))
         points = v2n(self.mesh[('int', 'fluid')].GetPointData().GetArray('GlobalNodeID'))
         with open(self.p['interfaces']['disp'] + '.dat', 'w') as f:
             f.write('3 2 ' + str(len(sol)) + '\n')
