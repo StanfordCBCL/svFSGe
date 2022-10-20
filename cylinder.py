@@ -104,7 +104,7 @@ class Mesh(Simulation):
 
         # initialize arrays
         self.points = np.zeros((n_points, 3))
-        self.cells = np.zeros((n_cells, 8))
+        self.cells = np.zeros((n_cells, 8), dtype=int)
         self.cosy = np.zeros((n_points, 13))
         self.fiber_dict = defaultdict(lambda: np.zeros((n_points, 3)))
         self.vol_dict = defaultdict(list)
@@ -383,13 +383,12 @@ class Mesh(Simulation):
                         self.vol_dict['fluid'] += [cid]
                     else:
                         self.vol_dict['solid'] += [cid]
-                    if self.p['n_seg'] == 1:
-                        if ic < self.p['n_cell_cir'] // 2:
-                            self.vol_dict['y_seg'] += [cid]
-                        if ic < self.p['n_cell_cir'] // 4 or ic >= self.p['n_cell_cir'] // 4 * 3:
-                            self.vol_dict['x_seg'] += [cid]
                     cid += 1
 
+        # label according to cell centers
+        cell_cent = np.mean(self.points[self.cells], axis=1)
+        for i, c in enumerate(['x', 'y']):
+            self.vol_dict[c + '_seg'] = np.where(cell_cent[:, i] > 0.0)[0].tolist()
 
         # assemble point data
         self.point_data = {'GlobalNodeID': np.arange(len(self.points)) + 1,
@@ -556,4 +555,4 @@ def divisible(f, i):
     return f // i == f / i
 
 if __name__ == '__main__':
-    generate_mesh('in_geo/minimal_tube3.json')
+    generate_mesh('in_geo/minimal_tube_full.json')
