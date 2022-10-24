@@ -4,9 +4,9 @@
 Continue previous simulation: 0
 Number of spatial dimensions: 3
 Number of time steps: 10
-Time step size: 0.002
+Time step size: 0.01
 
-Simulation initialization file path: partitioned/fluid.vtu
+#Simulation initialization file path: partitioned/fluid.vtu
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: steady
@@ -71,12 +71,10 @@ Add equation: fluid {
    Add BC: f_start {
       Type: Dir
       Impose flux: t
-      Zero out perimeter: f
       Time dependence: Unsteady
       Temporal values file path: steady_flow.dat
       Profile: User_defined
-      Spatial profile file path: mesh_tube_fsi/inflow_profile.dat
-      Effective direction: (0, 0, 1)
+      Spatial profile file path: inflow_profile.dat
    }
 
    # fluid: no slip

@@ -76,7 +76,7 @@ Add equation: fluid {
    # fluid: inflow
    Add BC: f_start {
       Type: Dir
-#      Impose flux: t
+      Impose flux: t
       Zero out perimeter: f
       Time dependence: Unsteady
       Temporal values file path: steady_flow.dat

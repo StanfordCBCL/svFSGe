@@ -60,10 +60,15 @@ class FSG(svFSI):
         self.archive()
 
     def main(self):
+        # initialize relaxation parameter
+        self.p['coup']['omega'] = {}
+        for name in ['disp', 'wss']:
+            self.p['coup']['omega'][name] = self.p['coup']['omega0']
+
         # loop load steps
         i = 0
         for t in range(self.p['nmax'] + 1):
-            print('=' * 30 + ' t ' + str(t) + ' ==== fp ' + '{:.2f}'.format(self.p_vec[t]) + ' ' + '=' * 30)
+            print('=' * 40 + ' t ' + str(t) + ' ==== fp ' + '{:.2f}'.format(self.p_vec[t]) + ' ' + '=' * 40)
 
             # loop sub-iterations
             for n in range(self.p['coup']['nmax']):
@@ -88,12 +93,12 @@ class FSG(svFSI):
                 out = 'i ' + str(i) + ' \tn ' + str(n)
                 for name, e in self.err.items():
                     out += '\t' + name + ' ' + '{:.2e}'.format(e[-1][-1])
-                out += '\tomega ' + '{:.2e}'.format(self.p['coup']['omega'])
+                for name, omega in self.p['coup']['omega'].items():
+                    out += '\tomega ' + name + ' {:.2e}'.format(omega)
                 print(out)
 
                 # archive solution
                 self.curr.archive('tube', os.path.join(self.p['root'], 'tube_' + str(i).zfill(3) + '.vtu'))
-                self.log += [self.curr.copy()]
 
                 # check if coupling converged
                 check_tol = np.all(np.array([e[-1][-1] for e in self.err.values()]) < self.p['coup']['tol'])
@@ -147,8 +152,9 @@ class FSG(svFSI):
         shutil.move('mesh_tube_fsi', os.path.join(self.p['f_out'], 'mesh_tube_fsi'))
 
         # # save stored results
-        # file_name = os.path.join(self.p['f_out'], 'solution.json')
-        # np.save(file_name, self.converged)
+        np.save(os.path.join(self.p['f_out'], 'err.npy'), self.err)
+        # np.save(os.path.join(self.p['f_out'], 'log.npy'), self.log)
+        # np.save(os.path.join(self.p['f_out'], 'converged.npy'), self.converged)
 
         # save parameters
         self.save_params(self.p['root'] + '.json')
@@ -164,38 +170,32 @@ class FSG(svFSI):
             shutil.copyfile(src, trg)
 
         # save material model
-        src = os.path.split(self.p['exe']['solid'])[0] + '/../../../Code/Source/svFSI/FEMbeCmm.cpp'
+        src = usr + os.path.split(self.p['exe']['solid'])[0] + '/../../../Code/Source/svFSI/FEMbeCmm.cpp'
         trg = os.path.join(self.p['f_out'], self.p['root'], 'FEMbeCmm.cpp')
         shutil.copyfile(src, trg)
 
     def coup_step(self, i, t, n):
-        if t == 0:
-            # no relaxation necessary during prestressing (prestress does not depend on wss)
-            self.p['coup']['omega'] = 1.0
-        else:
-            self.p['coup']['omega'] = self.p['coup']['omega0']
-
-            # half relaxation for first fsi time step since no good predictor is available
-            # if self.p['fsi'] and t == 1:
-            #     self.p['coup']['omega'] /= 2.0
-
         # copy previous solution
+        self.bfor = self.prev.copy()
         self.prev = self.curr.copy()
 
         # step 1: fluid update
         if n == 0:
             # replace solution with prediction
             self.coup_predict(i, t, n)
+
+            # offset pressure to match homeostatic pressure in the middle of the domain
+            if i == 1:
+                f = ('fluid', 'press', 'vol')
+                p = self.curr.get(f)
+                self.p['p_offset'] = - (np.max(p) - np.min(p)) / 2.0
+                self.curr.add(f, p + self.p['p_offset'])
         else:
             if self.p['fsi']:
                 if self.step('fluid', i, t):
                     return
             else:
                 self.poiseuille(t)
-
-        # relax pressure update
-        # todo: try in asym aneurysm and see if it gets rid of pressure oscillations (maybe also do for velocity)
-        # self.coup_relax('fluid', 'press', i, t, n)
 
         # relax wss update
         self.coup_relax('fluid', 'wss', i, t, n)
@@ -264,7 +264,8 @@ class FSG(svFSI):
 
         # quadratically extrapolate from previous two load increments
         vec_m2 = self.converged[-3].get(kind)
-        return 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
+        # return 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
+        return 2.5 * vec_m0 - 2.0 * vec_m1 + 0.5 * vec_m2
 
     def predictor_tube(self, kind, t):
         d, f, p = kind
@@ -285,28 +286,48 @@ class FSG(svFSI):
                 return self.curr.get(kind)
 
     def coup_relax(self, domain, name, i, t, n):
-        curri = deepcopy(self.curr.get((domain, name, 'vol')))
-        previ = deepcopy(self.prev.get((domain, name, 'vol')))
+        # volume increment
+        curr_v = deepcopy(self.curr.get((domain, name, 'vol')))
+        prev_v = deepcopy(self.prev.get((domain, name, 'vol')))
+        bfor_v = deepcopy(self.bfor.get((domain, name, 'vol')))
+
+        # interface increment
+        curr_i = deepcopy(self.curr.get((domain, name, 'int')))
+        prev_i = deepcopy(self.prev.get((domain, name, 'int')))
+
+        # log increments for aitken relaxation
+        self.log[name] += [curr_i - prev_i]
+
+        # calculate new relaxation factor
+        omega = self.coup_omega(name, t)
+        self.p['coup']['omega'][name] = omega
+
         if i == 1 or n == 0:
             # first step: no old solution
-            vec_relax = curri
+            vec_relax = curr_v
         else:
             # damp with previous iteration
-            vec_relax = self.p['coup']['omega'] * curri + (1.0 - self.p['coup']['omega']) * previ
+            vec_relax = omega * curr_v + (1.0 - omega) * prev_v
+        if t > 0 and n > 1:
+            vec_relax = 0.5 * curr_v + 0.375 * prev_v + 0.125 * bfor_v # best so far
+            # vec_relax = 0.5 * curr_v + 0.25 * prev_v + 0.25 * bfor_v # prett large damped oscillations
+            # vec_relax = (curr_v + prev_v + bfor_v) / 3.0 # no oscillations but converges slowly
+            # vec_relax = 0.75 * curr_v - 0.375 * prev_v + 0.125 * bfor_v # doesn't work
+            # vec_relax = 1.0 * curr_v - 0.75 * prev_v + 0.25 * bfor_v # doesn't work
+            # vec_relax = 0.5 * curr_v + 0.4 * prev_v + 0.1 * bfor_v #
+            # vec_relax = 0.5 * curr_v + 0.5 * prev_v
 
         # update solution
         self.curr.add((domain, name, 'vol'), vec_relax)
 
     def coup_err(self, domain, name, i, t, n):
         curri = deepcopy(self.curr.get((domain, name, 'int')))
-        previ = deepcopy(self.prev.get((domain, name, 'int')))
         if i == 1 or n == 0:
             # first step: no old solution
-            vec_relax = curri
             err = 1.0
         else:
             # difference
-            diff = np.abs(previ - curri)
+            diff = np.abs(self.log[name][-1])
             if len(diff.shape) == 1:
                 diff_n = np.max(diff)
             else:
@@ -317,7 +338,7 @@ class FSG(svFSI):
                 # normalize w.r.t. mean radius
                 norm = np.mean(np.abs(rad(self.points[('int', 'solid')])))
             else:
-                # normalize w.r.t. displacement norm
+                # normalize w.r.t. solution norm
                 norm = np.max(np.abs(curri))
 
             # normalized error
@@ -330,32 +351,42 @@ class FSG(svFSI):
         # append error norm
         self.err[name][-1].append(err)
 
-    def coup_aitken(self, kind):
-        if len(self.log) < 2:
+    def coup_omega(self, name, t):
+        # no relaxation necessary during prestressing (prestress does not depend on wss)
+        if t == 0:
+            return 1.0
+
+        # if name == 'disp':
+        #     return 0.25
+        # elif name == 'wss':
+        #     return 0.25
+        return 0.5
+
+        if len(self.log[name]) < 2:
             return self.p['coup']['omega0']
 
         # current and old solution
-        m2 = self.log[-1].get(kind)
-        m1 = self.log[-2].get(kind)
-        if kind[1] == 'disp':
+        m1 = self.log[name][-1]
+        m2 = self.log[name][-2]
+        if len(m1.shape) == 2:
             m1 = np.linalg.norm(m1, axis=1)
             m2 = np.linalg.norm(m2, axis=1)
-        diff = m2 - m1
+        diff = m1 - m2
         norm = np.linalg.norm(diff)
 
         if norm == 0.0:
             return self.p['coup']['omega0']
-        else:
-            # relaxation
-            omega = - self.p['coup']['omega'] * np.dot(m1, diff) / norm ** 2
 
-            # lower bound
-            # omega = np.max([omega, 1/2**3])
-            omega = np.max([omega, 0.25])
+        # aitken relaxation
+        omega = - self.p['coup']['omega'][name] * np.dot(m2, diff) / norm ** 2
 
-            # upper bound
-            # return np.min([omega, 1/2])
-            return np.min([omega, 0.5])
+        # lower bound
+        omega = np.max([omega, 0.1])
+
+        # upper bound
+        omega = np.min([omega, 0.9])
+
+        return omega
 
 
 def rad(x):
@@ -365,5 +396,5 @@ def rad(x):
 
 
 if __name__ == '__main__':
-    fsg = FSG('in_sim/partitioned_full.json')
+    fsg = FSG('in_sim/partitioned.json')
     fsg.run()

@@ -103,12 +103,13 @@ class svFSI(Simulation):
 
         # logging
         self.converged = []
-        self.log = []
+        self.log = defaultdict(list)
         self.err = defaultdict(list)
 
         # current/previous solution vector at interface and in volume
         self.curr = Solution(self)
         self.prev = Solution(self)
+        self.bfor = Solution(self)
 
         # generate load vector
         self.p_vec = np.linspace(1.0, self.p['fmax'], self.p['nmax'] + 1)
@@ -125,10 +126,11 @@ class svFSI(Simulation):
     def set_fluid(self, t):
         # fluid flow (scale by number of tube segments)
         # todo: calculate area in current configuration
-        q = self.p['fluid']['q0'] / self.mesh_p['n_seg'] / (self.mesh_p['r_inner']**2 * np.pi)
+        q = self.p['fluid']['q0'] / self.mesh_p['n_seg']
 
         # fluid pressure (scale by current pressure load step)
-        p = self.p['fluid']['p0'] * self.p_vec[t]
+        # offset chosen so initial pressure is obtained in the middle of the vessel
+        p = self.p['fluid']['p0'] * self.p_vec[t] + self.p['p_offset']
 
         # set bc pressure
         with open(self.p['interfaces']['bc_pressure'], 'w') as f:
@@ -139,8 +141,8 @@ class svFSI(Simulation):
         # set bc flow
         with open(self.p['interfaces']['bc_flow'], 'w') as f:
             f.write('2 1\n')
-            f.write('0.0 ' + str(q) + '\n')
-            f.write('100.0 ' + str(q) + '\n')
+            f.write('0.0 ' + str(-q) + '\n')
+            f.write('100.0 ' + str(-q) + '\n')
 
         # initialize with poiseuille solution
         # self.poiseuille(t)
@@ -294,6 +296,7 @@ class svFSI(Simulation):
                     self.curr.add((phys, f, 'vol'), sol)
 
         # archive input
+        # todo: remove all outputs after post-processing
         if domain in ['fluid', 'solid']:
             src = os.path.join(self.p['root'], self.p['interfaces']['geo_' + domain])
             trg = os.path.join(self.p['root'], domain + '_inp_' + i_str + '.vtu')
@@ -346,12 +349,6 @@ class svFSI(Simulation):
         # get flow profile at inlet
         u_profile = 1.0 / area * self.get_profile(x_norm, rad_norm, t)
 
-        # import matplotlib.pyplot as plt
-        # fig = plt.figure()
-        # ax = fig.add_subplot(projection='3d')
-        # ax.scatter(points[:, 0], points[:, 1], u_profile)
-        # plt.show()
-        # pdb.set_trace()
         # export inflow profile: GlobalNodeID, weight
         with open('inflow_profile.dat', 'w') as file:
             for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
@@ -361,7 +358,7 @@ class svFSI(Simulation):
 
     def poiseuille(self, t, return_profile=False):
         # fluid flow and pressure
-        q = self.p['fluid']['q0'] / self.mesh_p['n_seg']
+        q = self.p['fluid']['q0']
         p = self.p['fluid']['p0'] * self.p_vec[t]
 
         # fluid mesh points in reference configuration
@@ -420,6 +417,9 @@ class svFSI(Simulation):
         # todo: use actual profile (and local gradient??)
         wss = 4.0 * self.p['fluid']['mu'] * q / np.pi / rad[map_int] ** 3.0
         self.curr.add(('fluid', 'wss', 'int'), wss)
+
+    def get_re(self):
+        return
 
 
 class Solution:
