@@ -21,6 +21,7 @@ from vtk.util.numpy_support import numpy_to_vtk as n2v
 
 from simulation import Simulation
 from cylinder import generate_mesh
+from smooth import smooth_wss
 
 if platform.system() == 'Darwin':
     usr = '/Users/pfaller/'
@@ -165,7 +166,7 @@ class svFSI(Simulation):
         # write inflow profile
         self.write_profile(t)
 
-    def set_mesh(self):
+    def set_mesh(self, i):
         # write general bc file
         sol = self.curr.get(('fluid', 'disp', 'int'))
         points = v2n(self.mesh[('int', 'fluid')].GetPointData().GetArray('GlobalNodeID'))
@@ -180,6 +181,16 @@ class svFSI(Simulation):
                 for di in d:
                     f.write(str(di) + ' ')
                 f.write('\n')
+
+        # add solution to fluid mesh
+        mesh = self.mesh[('vol', 'fluid')]
+        disp = self.curr.get(('fluid', 'disp', 'vol'))
+        if i == 1:
+            disp = np.zeros(disp.shape)
+        add_array(mesh, disp, sv_names['disp'])
+
+        # write geometry to file
+        write_geo(os.path.join(self.p['root'], self.p['interfaces']['geo_mesh']), mesh)
 
     def set_solid(self, t):
         # name of wall properties array
@@ -226,7 +237,7 @@ class svFSI(Simulation):
         elif name == 'solid':
             self.set_solid(t)
         elif name == 'mesh':
-            self.set_mesh()
+            self.set_mesh(i)
 
         # execute svFSI
         exe = 'mpirun -np '
@@ -291,7 +302,15 @@ class svFSI(Simulation):
                 if f == 'wss':
                     # points on fluid interface
                     map_int = self.map((('int', 'fluid'), ('vol', 'fluid')))
-                    self.curr.add((phys, f, 'int'), np.linalg.norm(sol, axis=1)[map_int])
+                    points = deepcopy(self.points[('vol', 'fluid')])[map_int]
+
+                    # get scalar wss
+                    wss_norm = np.linalg.norm(sol, axis=1)[map_int]
+
+                    # smooth wss
+                    wss = smooth_wss(points, wss_norm)
+
+                    self.curr.add((phys, f, 'int'), wss)
                 else:
                     self.curr.add((phys, f, 'vol'), sol)
 
@@ -356,7 +375,7 @@ class svFSI(Simulation):
                 if line < len(i_inlet) - 1:
                     file.write('\n')
 
-    def poiseuille(self, t, return_profile=False):
+    def poiseuille(self, t):
         # fluid flow and pressure
         q = self.p['fluid']['q0']
         p = self.p['fluid']['p0'] * self.p_vec[t]

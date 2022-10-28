@@ -60,10 +60,15 @@ class FSG(svFSI):
         self.archive()
 
     def main(self):
-        # initialize relaxation parameter
-        self.p['coup']['omega'] = {}
-        for name in ['disp', 'wss']:
-            self.p['coup']['omega'][name] = self.p['coup']['omega0']
+        # print reynolds number
+        c1 = 2.0 * self.p['fluid']['rho'] * self.p['fluid']['q0']
+        c2 = self.mesh_p['r_inner'] * np.pi * self.p['fluid']['mu']
+        print('Re = ' + str(int(c1 / c2)))
+
+        # offset pressure to match homeostatic pressure in the middle of the domain
+        self.poiseuille(0)
+        p = self.curr.get(('fluid', 'press', 'vol'))
+        self.p['p_offset'] = - (np.max(p) - np.min(p)) / 2.0
 
         # loop load steps
         i = 0
@@ -87,14 +92,19 @@ class FSG(svFSI):
                 # get error
                 self.coup_err('solid', 'disp', i, t, n)
                 self.coup_err('fluid', 'wss', i, t, n)
-                # self.coup_err('fluid', 'press', i, t, n)
+                self.coup_err('fluid', 'press', i, t, n)
 
                 # screen output
                 out = 'i ' + str(i) + ' \tn ' + str(n)
                 for name, e in self.err.items():
                     out += '\t' + name + ' ' + '{:.2e}'.format(e[-1][-1])
-                for name, omega in self.p['coup']['omega'].items():
-                    out += '\tomega ' + name + ' {:.2e}'.format(omega)
+                # out += '\t\t'
+                # for name in self.err.keys():
+                #     if n == 0:
+                #         e_log = 0.0
+                #     else:
+                #         e_log = np.log10(self.err[name][-1][-1] / self.err[name][-1][-2])
+                #     out += '\t' + name + ' log ' + '{:.1f}'.format(e_log)
                 print(out)
 
                 # archive solution
@@ -175,36 +185,26 @@ class FSG(svFSI):
         shutil.copyfile(src, trg)
 
     def coup_step(self, i, t, n):
-        # copy previous solution
+        # store previous solutions
         self.bfor = self.prev.copy()
         self.prev = self.curr.copy()
 
         # step 1: fluid update
-        if n == 0:
-            # replace solution with prediction
-            self.coup_predict(i, t, n)
-
-            # offset pressure to match homeostatic pressure in the middle of the domain
-            if i == 1:
-                f = ('fluid', 'press', 'vol')
-                p = self.curr.get(f)
-                self.p['p_offset'] = - (np.max(p) - np.min(p)) / 2.0
-                self.curr.add(f, p + self.p['p_offset'])
+        if self.p['fsi']:
+            if self.step('fluid', i, t):
+                return
         else:
-            if self.p['fsi']:
-                if self.step('fluid', i, t):
-                    return
-            else:
-                self.poiseuille(t)
+            self.poiseuille(t)
 
-        # relax wss update
+        # relax fluid update
+        self.coup_relax('fluid', 'press', i, t, n)
         self.coup_relax('fluid', 'wss', i, t, n)
 
         # step 2: solid update
         if self.step('solid', i, t):
             return
 
-        # relax displacement update
+        # relax solid update
         self.coup_relax('solid', 'disp', i, t, n)
 
         # step 3: deform mesh
@@ -300,22 +300,37 @@ class FSG(svFSI):
 
         # calculate new relaxation factor
         omega = self.coup_omega(name, t)
-        self.p['coup']['omega'][name] = omega
+        self.p['coup']['omega'] = omega
 
-        if i == 1 or n == 0:
+        # pdb.set_trace()
+        if i == 1:
             # first step: no old solution
             vec_relax = curr_v
         else:
-            # damp with previous iteration
-            vec_relax = omega * curr_v + (1.0 - omega) * prev_v
-        if t > 0 and n > 1:
-            vec_relax = 0.5 * curr_v + 0.375 * prev_v + 0.125 * bfor_v # best so far
-            # vec_relax = 0.5 * curr_v + 0.25 * prev_v + 0.25 * bfor_v # prett large damped oscillations
-            # vec_relax = (curr_v + prev_v + bfor_v) / 3.0 # no oscillations but converges slowly
-            # vec_relax = 0.75 * curr_v - 0.375 * prev_v + 0.125 * bfor_v # doesn't work
-            # vec_relax = 1.0 * curr_v - 0.75 * prev_v + 0.25 * bfor_v # doesn't work
-            # vec_relax = 0.5 * curr_v + 0.4 * prev_v + 0.1 * bfor_v #
-            # vec_relax = 0.5 * curr_v + 0.5 * prev_v
+            if t == 0:
+                if i == 2:
+                    # vec_relax = 1/16 * curr_v + 15/16 * prev_v
+                    # vec_relax = 0.125 * curr_v + 0.875 * prev_v
+                    vec_relax = 0.25 * curr_v + 0.75 * prev_v
+                    # vec_relax = 0.5 * curr_v + 0.5 * prev_v
+                else:
+                    vec_relax = curr_v
+            else:
+                # vec_relax = 0.5 * curr_v + 0.375 * prev_v + 0.125 * bfor_v # best so far but starts oscillating at t=8
+                # vec_relax = 0.25 * curr_v + 0.625 * prev_v + 0.125 * bfor_v # more damping but more robust
+                # vec_relax = 0.5 * curr_v + 0.4 * prev_v + 0.1 * bfor_v # even better (but crashes at t=6)
+                # vec_relax = 0.5 * curr_v + 0.5 * prev_v # good but takes many iterations and oscillates
+                # vec_relax = 0.6 * curr_v + 0.3 * prev_v + 0.1 * bfor_v # oscillates
+
+                # if t == 6:
+                #     vec_relax = 0.25 * curr_v + 0.625 * prev_v + 0.125 * bfor_v
+                # elif t >= 7:
+                #     vec_relax = 0.125 * curr_v + 0.625 * prev_v + 0.25 * bfor_v
+                # else:
+                #     vec_relax = 0.5 * curr_v + 0.4 * prev_v + 0.1 * bfor_v
+                vec_relax = 0.25 * curr_v + 0.625 * prev_v + 0.125 * bfor_v
+                if t >= 6:
+                    vec_relax = 0.125 * curr_v + 0.625 * prev_v + 0.25 * bfor_v
 
         # update solution
         self.curr.add((domain, name, 'vol'), vec_relax)
@@ -334,7 +349,7 @@ class FSG(svFSI):
                 diff_n = np.max(np.linalg.norm(diff, axis=1))
 
             # norm
-            if t == 0:
+            if t <= 1:
                 # normalize w.r.t. mean radius
                 norm = np.mean(np.abs(rad(self.points[('int', 'solid')])))
             else:
@@ -378,7 +393,7 @@ class FSG(svFSI):
             return self.p['coup']['omega0']
 
         # aitken relaxation
-        omega = - self.p['coup']['omega'][name] * np.dot(m2, diff) / norm ** 2
+        omega = - self.p['coup']['omega'] * np.dot(m2, diff) / norm ** 2
 
         # lower bound
         omega = np.max([omega, 0.1])
