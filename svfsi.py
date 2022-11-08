@@ -124,10 +124,13 @@ class svFSI(Simulation):
             self.maps[m] = map_ids(self.points[m[0]], self.points[m[1]])
         return self.maps[m]
 
-    def set_fluid(self, t):
+    def set_fluid(self, i, t):
         # fluid flow (scale by number of tube segments)
-        # todo: calculate area in current configuration
-        q = self.p['fluid']['q0'] / self.mesh_p['n_seg']
+        q = deepcopy(self.p['fluid']['q0'] / self.mesh_p['n_seg'])
+
+        # ramp up flow over the first iterations
+        if t == 0:
+            q *= np.min([i / 5.0, 1.0])
 
         # fluid pressure (scale by current pressure load step)
         # offset chosen so initial pressure is obtained in the middle of the vessel
@@ -233,7 +236,7 @@ class svFSI(Simulation):
 
         # set up input files
         if name == 'fluid':
-            self.set_fluid(t)
+            self.set_fluid(i, t)
         elif name == 'solid':
             self.set_solid(t)
         elif name == 'mesh':
@@ -299,18 +302,21 @@ class svFSI(Simulation):
             # extract fields
             for f in fields:
                 sol = v2n(res.GetPointData().GetArray(sv_names[f]))
-                if f == 'wss':
+                if f in ['wss', 'press']:
                     # points on fluid interface
                     map_int = self.map((('int', 'fluid'), ('vol', 'fluid')))
                     points = deepcopy(self.points[('vol', 'fluid')])[map_int]
 
                     # get scalar wss
-                    wss_norm = np.linalg.norm(sol, axis=1)[map_int]
+                    if f == 'wss':
+                        sol = np.linalg.norm(sol, axis=1)
 
-                    # smooth wss
-                    wss = smooth_wss(points, wss_norm)
+                    # smooth solution
+                    sol_smooth = smooth_wss(points, sol[map_int], smooth=10)
 
-                    self.curr.add((phys, f, 'int'), wss)
+                    # if f == 'press':
+                    #     self.curr.add((phys, f, 'vol'), sol)
+                    self.curr.add((phys, f, 'int'), sol_smooth)
                 else:
                     self.curr.add((phys, f, 'vol'), sol)
 
