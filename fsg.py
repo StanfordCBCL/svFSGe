@@ -66,9 +66,10 @@ class FSG(svFSI):
         print('Re = ' + str(int(c1 / c2)))
 
         # offset pressure to match homeostatic pressure in the middle of the domain
-        self.poiseuille(0)
-        p = self.curr.get(('fluid', 'press', 'vol'))
-        self.p['p_offset'] = - (np.max(p) - np.min(p)) / 2.0
+        # self.poiseuille(0)
+        # p = self.curr.get(('fluid', 'press', 'vol'))
+        # self.p['p_offset'] = - (np.max(p) - np.min(p)) / 2.0
+        self.p['p_offset'] = 0.0
 
         # loop load steps
         i = 0
@@ -302,35 +303,31 @@ class FSG(svFSI):
         omega = self.coup_omega(name, t)
         self.p['coup']['omega'] = omega
 
-        # pdb.set_trace()
-        if i == 1:
-            # first step: no old solution
+        if t == 0:
             vec_relax = curr_v
         else:
-            if t == 0:
-                if i == 2:
-                    # vec_relax = 1/16 * curr_v + 15/16 * prev_v
-                    # vec_relax = 0.125 * curr_v + 0.875 * prev_v
-                    vec_relax = 0.25 * curr_v + 0.75 * prev_v
-                    # vec_relax = 0.5 * curr_v + 0.5 * prev_v
-                else:
-                    vec_relax = curr_v
-            else:
-                # vec_relax = 0.5 * curr_v + 0.375 * prev_v + 0.125 * bfor_v # best so far but starts oscillating at t=8
-                # vec_relax = 0.25 * curr_v + 0.625 * prev_v + 0.125 * bfor_v # more damping but more robust
-                # vec_relax = 0.5 * curr_v + 0.4 * prev_v + 0.1 * bfor_v # even better (but crashes at t=6)
-                # vec_relax = 0.5 * curr_v + 0.5 * prev_v # good but takes many iterations and oscillates
-                # vec_relax = 0.6 * curr_v + 0.3 * prev_v + 0.1 * bfor_v # oscillates
+            # vec_relax = 0.5 * curr_v + 0.375 * prev_v + 0.125 * bfor_v # best so far but starts oscillating at t=8
+            # vec_relax = 0.25 * curr_v + 0.625 * prev_v + 0.125 * bfor_v # more damping but more robust
+            # vec_relax = 0.5 * curr_v + 0.4 * prev_v + 0.1 * bfor_v # even better (but crashes at t=6)
+            # vec_relax = 0.5 * curr_v + 0.5 * prev_v # good but takes many iterations and oscillates
+            # vec_relax = 0.6 * curr_v + 0.3 * prev_v + 0.1 * bfor_v # oscillates
 
-                # if t == 6:
-                #     vec_relax = 0.25 * curr_v + 0.625 * prev_v + 0.125 * bfor_v
-                # elif t >= 7:
-                #     vec_relax = 0.125 * curr_v + 0.625 * prev_v + 0.25 * bfor_v
-                # else:
-                #     vec_relax = 0.5 * curr_v + 0.4 * prev_v + 0.1 * bfor_v
+            # if t == 6:
+            #     vec_relax = 0.25 * curr_v + 0.625 * prev_v + 0.125 * bfor_v
+            # elif t >= 7:
+            #     vec_relax = 0.125 * curr_v + 0.625 * prev_v + 0.25 * bfor_v
+            # else:
+            #     vec_relax = 0.5 * curr_v + 0.4 * prev_v + 0.1 * bfor_v
+
+            # vec_relax = 0.25 * curr_v + 0.625 * prev_v + 0.125 * bfor_v
+            # if t >= 5:
+            #     vec_relax = 0.125 * curr_v + 0.625 * prev_v + 0.25 * bfor_v
+
+            vec_relax = 0.5 * curr_v + 0.4 * prev_v + 0.1 * bfor_v
+            if t >= 2:
                 vec_relax = 0.25 * curr_v + 0.625 * prev_v + 0.125 * bfor_v
-                if t >= 6:
-                    vec_relax = 0.125 * curr_v + 0.625 * prev_v + 0.25 * bfor_v
+            if t >= 4:
+                vec_relax = 0.125 * curr_v + 0.625 * prev_v + 0.25 * bfor_v
 
         # update solution
         self.curr.add((domain, name, 'vol'), vec_relax)
