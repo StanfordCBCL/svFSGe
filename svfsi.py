@@ -106,6 +106,8 @@ class svFSI(Simulation):
         self.converged = []
         self.log = defaultdict(list)
         self.err = defaultdict(list)
+        self.dk = defaultdict(list)
+        self.dtk = defaultdict(list)
 
         # current/previous solution vector at interface and in volume
         self.curr = Solution(self)
@@ -114,6 +116,14 @@ class svFSI(Simulation):
 
         # generate load vector
         self.p_vec = np.linspace(1.0, self.p['fmax'], self.p['nmax'] + 1)
+
+        # relaxation parameter
+        self.p['coup']['omega'] = defaultdict(list)
+
+        # calculate reynolds number
+        c1 = 2.0 * self.p['fluid']['rho'] * self.p['fluid']['q0']
+        c2 = self.mesh_p['r_inner'] * np.pi * self.p['fluid']['mu']
+        self.p['re'] = c1 / c2
 
     def validate_params(self):
         pass
@@ -133,8 +143,7 @@ class svFSI(Simulation):
             q *= np.min([i / 5.0, 1.0])
 
         # fluid pressure (scale by current pressure load step)
-        # offset chosen so initial pressure is obtained in the middle of the vessel
-        p = self.p['fluid']['p0'] * self.p_vec[t] + self.p['p_offset']
+        p = self.p['fluid']['p0'] * self.p_vec[t]
 
         # set bc pressure
         with open(self.p['interfaces']['bc_pressure'], 'w') as f:
@@ -302,21 +311,12 @@ class svFSI(Simulation):
             # extract fields
             for f in fields:
                 sol = v2n(res.GetPointData().GetArray(sv_names[f]))
-                if f in ['wss', 'press']:
+                if f == 'wss':
                     # points on fluid interface
                     map_int = self.map((('int', 'fluid'), ('vol', 'fluid')))
-                    points = deepcopy(self.points[('vol', 'fluid')])[map_int]
 
-                    # get scalar wss
-                    if f == 'wss':
-                        sol = np.linalg.norm(sol, axis=1)
-
-                    # smooth solution
-                    sol_smooth = smooth_wss(points, sol[map_int], smooth=10)
-
-                    # if f == 'press':
-                    #     self.curr.add((phys, f, 'vol'), sol)
-                    self.curr.add((phys, f, 'int'), sol_smooth)
+                    # only store magnitude of wss at interface (doesn't make sense elsewhere)
+                    self.curr.add((phys, f, 'int'), np.linalg.norm(sol, axis=1)[map_int])
                 else:
                     self.curr.add((phys, f, 'vol'), sol)
 
