@@ -41,6 +41,7 @@ sv_names = {'disp': 'Displacement',
             'press': 'Pressure',
             'velo': 'Velocity',
             'wss': 'WSS',
+            'pwss': 'pWSS',
             'jac': 'Jacobian',
             'cauchy': 'Cauchy_stress',
             'stress': 'Stress',
@@ -104,7 +105,6 @@ class svFSI(Simulation):
 
         # logging
         self.converged = []
-        self.log = defaultdict(list)
         self.err = defaultdict(list)
         self.dk = defaultdict(list)
         self.dtk = defaultdict(list)
@@ -112,7 +112,6 @@ class svFSI(Simulation):
         # current/previous solution vector at interface and in volume
         self.curr = Solution(self)
         self.prev = Solution(self)
-        self.bfor = Solution(self)
 
         # generate load vector
         self.p_vec = np.linspace(1.0, self.p['fmax'], self.p['nmax'] + 1)
@@ -124,6 +123,9 @@ class svFSI(Simulation):
         c1 = 2.0 * self.p['fluid']['rho'] * self.p['fluid']['q0']
         c2 = self.mesh_p['r_inner'] * np.pi * self.p['fluid']['mu']
         self.p['re'] = c1 / c2
+
+    def set_defaults(self):
+        pass
 
     def validate_params(self):
         pass
@@ -310,14 +312,26 @@ class svFSI(Simulation):
 
             # extract fields
             for f in fields:
-                sol = v2n(res.GetPointData().GetArray(sv_names[f]))
                 if f == 'wss':
+                    # map point data to cell data
+                    c2p = vtk.vtkCellDataToPointData()
+                    c2p.SetInputData(res)
+                    c2p.Update()
+
+                    # get element-wise wss maped to point data
+                    sol = v2n(c2p.GetOutput().GetPointData().GetArray('E_WSS'))
+
                     # points on fluid interface
                     map_int = self.map((('int', 'fluid'), ('vol', 'fluid')))
 
                     # only store magnitude of wss at interface (doesn't make sense elsewhere)
-                    self.curr.add((phys, f, 'int'), np.linalg.norm(sol, axis=1)[map_int])
+                    self.curr.add((phys, f, 'int'), sol[map_int])
+
+                    # only for logging, store svFSI point-wise wss
+                    sol = v2n(res.GetPointData().GetArray(sv_names[f]))
+                    self.curr.add((phys, 'pwss', 'int'), np.linalg.norm(sol[map_int], axis=1))
                 else:
+                    sol = v2n(res.GetPointData().GetArray(sv_names[f]))
                     self.curr.add((phys, f, 'vol'), sol)
 
         # archive input
@@ -466,6 +480,7 @@ class Solution:
         self.zero = {'disp': np.zeros(dim_vec),
                      'velo': np.zeros(dim_vec),
                      'wss': np.ones(dim_sca) * np.nan,
+                     'pwss': np.ones(dim_sca) * np.nan,
                      'press': np.zeros(dim_sca) * np.nan,
                      'jac': np.zeros(dim_sca) * np.nan,
                      'cauchy': np.zeros(dim_ten) * np.nan,
@@ -502,7 +517,7 @@ class Solution:
         map_v = self.sim.map(((p, d), ('vol', 'tube')))
         if f in ['disp', 'velo', 'press', 'jac', 'cauchy', 'stress', 'strain']:
             self.sol[f][map_v] = deepcopy(sol)
-        elif f == 'wss':
+        elif 'wss' in f:
             # wss in tube volume
             self.sol[f][map_v] = deepcopy(sol)
 
