@@ -140,6 +140,8 @@ class FSG(svFSI):
             ax2 = axi.twinx()
 
             # collect results
+            xticks = []
+            xtickl = []
             for j, (res, omg) in enumerate(zip(self.err[name], self.p['coup']['omega'][name])):
                 # iteration numbers
                 x = np.arange(n_iter[j], n_iter[j + 1])
@@ -150,17 +152,24 @@ class FSG(svFSI):
                 # plot omega
                 ax2.plot(x, omg[:len(x)], color=col_omg)
 
+                # assemble xticks
+                # xticks += ['t_' + str(j), str(len(x))]
+                # if j == 0:
+                #     xtickl += [0, len(x)]
+                # else:
+                #     xtickl += [0, len(x)]
+
             # plot convergence criterion
             axi.plot([0, n_iter[-1]], self.p['coup']['tol'] * np.ones(2), 'k--')
 
             # axis settings
             axi.tick_params(axis='y', colors=col_err)
-            axi.set_xticks(n_iter)
+            axi.set_xticks(n_iter[1:] - 1, ['t' + str(i) + ', n=' + str(j) for i, j in enumerate(np.diff(n_iter))])
             axi.set_xticks(np.arange(0, n_iter[-1]), minor=True)
             axi.set_xlim([0, n_iter[-1]])
             axi.set_ylabel('Residual ' + sv_names[name], color=col_err)
             axi.set_yscale('log')
-            axi.set_ylim([1.0e-4, 1])
+            axi.set_ylim([self.p['coup']['tol'] * 0.1, 10])
             axi.grid(which='minor', alpha=0.2)
             axi.grid(which='major', alpha=0.9)
             if i == len(self.err.keys()) - 1:
@@ -206,7 +215,6 @@ class FSG(svFSI):
 
     def coup_step_fixed(self, i, t, n):
         # store previous solutions
-        self.bfor = self.prev.copy()
         self.prev = self.curr.copy()
 
         # step 1: fluid update
@@ -334,7 +342,7 @@ class FSG(svFSI):
 
     def coup_err(self, domain, name, i, t, n):
         curri = deepcopy(self.curr.get((domain, name, 'int')))
-        if i == 1 or n == 0:
+        if i == 1:
             # first step: no old solution
             err = 1.0
         else:
@@ -367,6 +375,14 @@ class FSG(svFSI):
         # no relaxation necessary during prestressing (prestress does not depend on wss)
         if t == 0:
             omega = 1.0
+        # first step of new load step:
+        elif n == 0:
+            # trust predictor only a little bit
+            if t <= 2:
+                omega = 0.5
+            # trust predictor more from two-step extrapolation
+            else:
+                omega = 1.0
         else:
             # get old relaxed solutions
             dp = self.dk[name][-1]
