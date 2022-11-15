@@ -106,6 +106,7 @@ class svFSI(Simulation):
         # logging
         self.converged = []
         self.err = defaultdict(list)
+        self.res = []
         self.dk = defaultdict(list)
         self.dtk = defaultdict(list)
 

@@ -66,7 +66,11 @@ class FSG(svFSI):
         # loop load steps
         i = 0
         for t in range(self.p['nmax'] + 1):
-            print('=' * 45 + ' t ' + str(t) + ' ==== fp ' + '{:.2f}'.format(self.p_vec[t]) + ' ' + '=' * 45)
+            print('=' * 20 + ' t ' + str(t) + ' ==== fp ' + '{:.2f}'.format(self.p_vec[t]) + ' ' + '=' * 20)
+
+            # predict solution for next load step
+            if t > 0:
+                self.coup_predict(i, t)
 
             # loop sub-iterations
             for n in range(self.p['coup']['nmax']):
@@ -84,8 +88,6 @@ class FSG(svFSI):
 
                 # get error
                 self.coup_err('solid', 'disp', i, t, n)
-                # self.coup_err('fluid', 'wss', i, t, n)
-                # self.coup_err('fluid', 'press', i, t, n)
 
                 # screen output
                 out = 'i ' + str(i) + ' \tn ' + str(n) + '\t'
@@ -140,8 +142,6 @@ class FSG(svFSI):
             ax2 = axi.twinx()
 
             # collect results
-            xticks = []
-            xtickl = []
             for j, (res, omg) in enumerate(zip(self.err[name], self.p['coup']['omega'][name])):
                 # iteration numbers
                 x = np.arange(n_iter[j], n_iter[j + 1])
@@ -152,19 +152,12 @@ class FSG(svFSI):
                 # plot omega
                 ax2.plot(x, omg[:len(x)], color=col_omg)
 
-                # assemble xticks
-                # xticks += ['t_' + str(j), str(len(x))]
-                # if j == 0:
-                #     xtickl += [0, len(x)]
-                # else:
-                #     xtickl += [0, len(x)]
-
             # plot convergence criterion
             axi.plot([0, n_iter[-1]], self.p['coup']['tol'] * np.ones(2), 'k--')
 
             # axis settings
             axi.tick_params(axis='y', colors=col_err)
-            axi.set_xticks(n_iter[1:] - 1, ['t' + str(i) + ', n=' + str(j) for i, j in enumerate(np.diff(n_iter))])
+            axi.set_xticks(n_iter[1:] - 1, ['$t_{' + str(i) + '}$, n=' + str(j) for i, j in enumerate(np.diff(n_iter))])
             axi.set_xticks(np.arange(0, n_iter[-1]), minor=True)
             axi.set_xlim([0, n_iter[-1]])
             axi.set_ylabel('Residual ' + sv_names[name], color=col_err)
@@ -173,12 +166,14 @@ class FSG(svFSI):
             axi.grid(which='minor', alpha=0.2)
             axi.grid(which='major', alpha=0.9)
             if i == len(self.err.keys()) - 1:
-                axi.set_xlabel('Total iteration $i$')
+                axi.set_xlabel('Number of iterations $n$ per time step $t$')
 
             ax2.tick_params(axis='y', colors=col_omg)
             ax2.set_ylabel('Omega', color=col_omg)
             ax2.set_ylim([-0.02, 1.02])
             ax2.set_yticks(np.linspace(0, 1, 6))
+
+            axi.set_title('Total iterations: ' + str(n_iter[-1]))
 
         # save to file
         fig.savefig(os.path.join(self.p['f_out'], 'convergence.png'), bbox_inches='tight')
@@ -218,19 +213,13 @@ class FSG(svFSI):
         self.prev = self.curr.copy()
 
         # step 1: fluid update
-        if t > 0 and n == 0:
-            # replace solution with prediction
-            self.coup_predict(i, t, n)
+        if self.p['fsi']:
+            if self.step('mesh', i, t):
+                return
+            if self.step('fluid', i, t):
+                return
         else:
-            if self.p['fsi']:
-                if self.step('fluid', i, t):
-                    return
-            else:
-                self.poiseuille(t)
-
-        # relax fluid update
-        # self.coup_relax('fluid', 'press', i, t, n)
-        # self.coup_relax('fluid', 'wss', i, t, n)
+            self.poiseuille(t)
 
         # step 2: solid update
         if self.step('solid', i, t):
@@ -239,18 +228,9 @@ class FSG(svFSI):
         # relax solid update
         self.coup_relax('solid', 'disp', i, t, n)
 
-        # step 3: deform mesh
-        if self.p['fsi']:
-            if self.step('mesh', i, t):
-                return
-
-    def coup_predict(self, i, t, n):
-        if self.p['fsi']:
-            # predict wss
-            kind = ('fluid', 'wss', 'vol')
-        else:
-            # predict displacements
-            kind = ('solid', 'disp', 'vol')
+    def coup_predict(self, i, t):
+        # predict displacements
+        kind = ('solid', 'disp', 'vol')
 
         if t == 0 or not self.p['predict_file']:
             # extrapolate from previous time step(s)
@@ -259,10 +239,6 @@ class FSG(svFSI):
             # predict from file
             sol = self.predictor_tube(kind, t)
         self.curr.add(kind, sol)
-
-        # calculate wss from poiseuille flow
-        if not self.p['fsi']:
-            self.poiseuille(t)
 
     def predictor(self, kind, t):
         # fluid, solid, tube
@@ -318,7 +294,10 @@ class FSG(svFSI):
 
     def coup_relax(self, domain, name, i, t, n):
         # log interface solution for aitken relaxation
-        self.dk[name] += [deepcopy(self.curr.get((domain, name, 'int'))).flatten()]
+        dtk = deepcopy(self.curr.get((domain, name, 'int'))).flatten()
+        dk = deepcopy(self.prev.get((domain, name, 'int'))).flatten()
+        self.dk[name] += [dtk]
+        self.res += [dtk - dk]
 
         # calculate new relaxation factor
         self.coup_omega(name, i, t, n)
@@ -338,7 +317,8 @@ class FSG(svFSI):
         self.curr.add((domain, name, 'vol'), vec_relax)
 
         # log interface solution for aitken relaxation
-        self.dtk[name] += [deepcopy(self.curr.get((domain, name, 'int'))).flatten()]
+        dk = deepcopy(self.curr.get((domain, name, 'int'))).flatten()
+        self.dtk[name] += [dk]
 
     def coup_err(self, domain, name, i, t, n):
         curri = deepcopy(self.curr.get((domain, name, 'int')))
@@ -372,29 +352,31 @@ class FSG(svFSI):
         self.err[name][-1].append(err)
 
     def coup_omega(self, name, i, t, n):
+        kuettler = True
         # no relaxation necessary during prestressing (prestress does not depend on wss)
         if t == 0:
             omega = 1.0
-        # first step of new load step:
+        # first step of new load step
         elif n == 0:
-            # trust predictor only a little bit
-            if t <= 2:
-                omega = 0.5
-            # trust predictor more from two-step extrapolation
-            else:
-                omega = 1.0
+            omega = 0.1
         else:
-            # get old relaxed solutions
-            dp = self.dk[name][-1]
-            dk = self.dk[name][-2]
+            if kuettler:
+                rki = self.res[-1]
+                rkm = self.res[-2]
+                diff = rki - rkm
+                omega = - self.p['coup']['omega'][name][-1][-1] * np.dot(rkm, diff) / np.dot(diff, diff)
+            else:
+                # get old relaxed solutions
+                dp = self.dk[name][-1]
+                dk = self.dk[name][-2]
 
-            # get old unrelaxed solutions
-            dtk = self.dtk[name][-1]
-            dtm = self.dtk[name][-2]
+                # get old unrelaxed solutions
+                dtk = self.dtk[name][-1]
+                dtm = self.dtk[name][-2]
 
-            # aitken update
-            diff = dtk - dp - dtm + dk
-            omega = np.dot(dtk - dtm, diff) / np.dot(diff, diff)
+                # aitken update
+                diff = dtk - dp - dtm + dk
+                omega = np.dot(dtk - dtm, diff) / np.dot(diff, diff)
 
             # lower bound
             omega = np.max([omega, 0.1])
