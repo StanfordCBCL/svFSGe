@@ -165,7 +165,7 @@ class FSG(svFSI):
 
             ax2.tick_params(axis='y', colors=col_omg)
             ax2.set_ylabel('Omega', color=col_omg)
-            ax2.set_ylim([-0.02, 1.02])
+            ax2.set_ylim([0.0, 1.0])
             ax2.set_yticks(np.linspace(0, 1, 6))
 
             axi.set_title('Total iterations: ' + str(n_iter[-1]))
@@ -182,8 +182,6 @@ class FSG(svFSI):
 
         # # save stored results
         np.save(os.path.join(self.p['f_out'], 'err.npy'), self.err)
-        # np.save(os.path.join(self.p['f_out'], 'log.npy'), self.log)
-        # np.save(os.path.join(self.p['f_out'], 'converged.npy'), self.converged)
 
         # save parameters
         self.save_params(self.p['root'] + '.json')
@@ -209,8 +207,9 @@ class FSG(svFSI):
 
         # step 1: fluid update
         if self.p['fsi']:
-            if self.step('mesh', i, t):
-                return False
+            if i > 1:
+                if self.step('mesh', i, t):
+                    return False
             if self.step('fluid', i, t):
                 return False
         else:
@@ -322,29 +321,19 @@ class FSG(svFSI):
         self.dtk[name] += [dk]
 
     def coup_err(self, domain, name, i, t, n):
-        curri = deepcopy(self.curr.get((domain, name, 'int')))
         if i == 1:
             # first step: no old solution
             err = 1.0
         else:
             # difference
-            # diff = np.abs(self.dk[name][-1] - self.dtk[name][-2])
             diff = np.abs(self.res[-1])
             if len(diff.shape) == 1:
                 diff_n = np.max(diff)
             else:
                 diff_n = np.max(np.linalg.norm(diff, axis=1))
 
-            # norm
-            if t <= 1:
-                # normalize w.r.t. mean radius
-                norm = np.mean(np.abs(rad(self.points[('int', 'solid')])))
-            else:
-                # normalize w.r.t. solution norm
-                norm = np.max(np.abs(curri))
-
             # normalized error
-            err = np.linalg.norm(diff_n) / norm
+            err = np.linalg.norm(diff_n) / np.max(np.abs(self.curr.get((domain, name, 'int'))))
 
         # start a new sub-list for new load step
         if n == 0:
@@ -398,12 +387,6 @@ class FSG(svFSI):
 
         # append
         self.p['coup']['omega'][name][-1].append(omega)
-
-
-def rad(x):
-    sign = - (x[:, 0] < 0.0).astype(int)
-    sign += (x[:, 0] > 0.0).astype(int)
-    return sign * np.sqrt(x[:, 0] ** 2 + x[:, 1] ** 2)
 
 
 if __name__ == '__main__':
