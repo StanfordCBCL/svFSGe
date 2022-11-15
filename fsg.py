@@ -78,16 +78,13 @@ class FSG(svFSI):
                 i += 1
 
                 # perform coupling step
-                self.coup_step_fixed(i, t, n)
+                status = self.coup_step_fixed(i, t, n)
 
                 # check if simulation failed
                 for name, s in self.curr.sol.items():
                     if s is None:
                         print(name + ' simulation failed')
                         return
-
-                # get error
-                self.coup_err('solid', 'disp', i, t, n)
 
                 # screen output
                 out = 'i ' + str(i) + ' \tn ' + str(n) + '\t'
@@ -101,9 +98,7 @@ class FSG(svFSI):
                 self.curr.archive('tube', os.path.join(self.p['root'], 'tube_' + str(i).zfill(3) + '.vtu'))
 
                 # check if coupling converged
-                check_tol = np.all(np.array([e[-1][-1] for e in self.err.values()]) < self.p['coup']['tol'])
-                check_n = n >= self.p['coup']['nmin']
-                if check_tol and check_n:
+                if status:
                     # save converged steps
                     i_conv = str(i).zfill(3)
                     t_conv = str(t).zfill(3)
@@ -150,7 +145,7 @@ class FSG(svFSI):
                 axi.plot(x, res, linestyle='-', color=col_err)
 
                 # plot omega
-                ax2.plot(x, omg[:len(x)], color=col_omg)
+                ax2.plot(x, omg, color=col_omg)
 
             # plot convergence criterion
             axi.plot([0, n_iter[-1]], self.p['coup']['tol'] * np.ones(2), 'k--')
@@ -215,18 +210,33 @@ class FSG(svFSI):
         # step 1: fluid update
         if self.p['fsi']:
             if self.step('mesh', i, t):
-                return
+                return False
             if self.step('fluid', i, t):
-                return
+                return False
         else:
             self.poiseuille(t)
 
         # step 2: solid update
         if self.step('solid', i, t):
-            return
+            return False
+
+        # log interface solution for aitken relaxation
+        dtk = deepcopy(self.curr.get(('solid', 'disp', 'int'))).flatten()
+        dk = deepcopy(self.prev.get(('solid', 'disp', 'int'))).flatten()
+        self.dk['disp'] += [dtk]
+        self.res += [dtk - dk]
+
+        # calculate new relaxation factor
+        self.coup_omega('disp', i, t, n)
+
+        # get error
+        self.coup_err('solid', 'disp', i, t, n)
 
         # relax solid update
-        self.coup_relax('solid', 'disp', i, t, n)
+        if not self.coup_converged(n):
+            self.coup_relax('solid', 'disp', i, t, n)
+        else:
+            return True
 
     def coup_predict(self, i, t):
         # predict displacements
@@ -293,15 +303,6 @@ class FSG(svFSI):
                 return self.curr.get(kind)
 
     def coup_relax(self, domain, name, i, t, n):
-        # log interface solution for aitken relaxation
-        dtk = deepcopy(self.curr.get((domain, name, 'int'))).flatten()
-        dk = deepcopy(self.prev.get((domain, name, 'int'))).flatten()
-        self.dk[name] += [dtk]
-        self.res += [dtk - dk]
-
-        # calculate new relaxation factor
-        self.coup_omega(name, i, t, n)
-
         # volume increment
         curr_v = deepcopy(self.curr.get((domain, name, 'vol')))
         prev_v = deepcopy(self.prev.get((domain, name, 'vol')))
@@ -327,7 +328,8 @@ class FSG(svFSI):
             err = 1.0
         else:
             # difference
-            diff = np.abs(self.dk[name][-1] - self.dtk[name][-2])
+            # diff = np.abs(self.dk[name][-1] - self.dtk[name][-2])
+            diff = np.abs(self.res[-1])
             if len(diff.shape) == 1:
                 diff_n = np.max(diff)
             else:
@@ -350,6 +352,12 @@ class FSG(svFSI):
 
         # append error norm
         self.err[name][-1].append(err)
+
+    def coup_converged(self, n):
+        # check if coupling converged
+        check_tol = np.all(np.array([e[-1][-1] for e in self.err.values()]) < self.p['coup']['tol'])
+        check_n = n >= self.p['coup']['nmin']
+        return check_tol and check_n
 
     def coup_omega(self, name, i, t, n):
         kuettler = True
