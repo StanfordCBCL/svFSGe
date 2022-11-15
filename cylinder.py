@@ -45,7 +45,6 @@ def spacing(z, p):
     zones = np.array(p['zones'])
     densities = np.array(p['density'])
 
-    # pdb.set_trace()
     lengths = np.cumsum(zones)
     bounds = np.cumsum(densities)
 
@@ -63,17 +62,6 @@ class Mesh(Simulation):
     def __init__(self, f_params=None):
         # mesh parameters
         Simulation.__init__(self, f_params)
-
-        # axial mesh function
-        self.f = {}
-        if 'adapt' in self.p:
-            self.f['axi'] = lambda z: spacing(z, self.p['adapt'])
-        # self.f['axi'] = lambda z: np.sqrt(z)
-        # self.f['axi'] = lambda z: z**2
-        # self.f['axi'] = lambda z: np.log(z + 1) / np.log(2)
-        # self.f['axi'] = lambda z: np.exp(z ** 2) - 1
-        else:
-            self.f['axi'] = lambda z: z
 
         # size of quadratic mesh
         if self.p['n_seg'] == 4:
@@ -114,27 +102,48 @@ class Mesh(Simulation):
         self.cell_data = {}
         
         # file name
-        self.p['fname'] = 'tube_' + str(self.p['n_rad_f']) + '+' + str(self.p['n_rad_gr']) + 'x' + str(self.p['n_cir']) + 'x' + str(self.p['n_axi']) + '.vtu'
+        self.p['fname'] = 'tube.vtu'
+
+    def set_defaults(self):
+        # axial mesh function
+        self.f = {}
+        if 'adapt' in self.p:
+            self.f['axi'] = lambda z: spacing(z, self.p['adapt'])
+        # self.f['axi'] = lambda z: np.sqrt(z)
+        # self.f['axi'] = lambda z: z**2
+        # self.f['axi'] = lambda z: np.log(z + 1) / np.log(2)
+        # self.f['axi'] = lambda z: np.exp(z ** 2) - 1
+        else:
+            self.f['axi'] = lambda z: z
+        if 'boundary' not in self.p:
+            self.p['boundary'] = {'n': 0, 'thickness': 0.0}
 
     def validate_params(self):
         if self.p['n_seg'] == 1:
             assert divisible(self.p['n_cir'], 8), 'number of elements in cir direction must be divisible by eight'
-            assert self.p['n_rad_tran'] >= self.p['n_cir'] // 4, 'choose number of transition elements at least a quarter the number of cir elements'
+            assert self.p['n_rad_tran']- self.p['boundary']['n'] >= self.p['n_cir'] // 4, \
+                'choose number of transition elements at least a quarter the number of cir elements'
         elif self.p['n_seg'] == 4:
             assert divisible(self.p['n_cir'], 2), 'number of elements in cir direction must be divisible by two'
-            assert self.p['n_rad_tran'] >= self.p['n_cir'] // 2, 'choose number of transition elements at least half the number of cir elements'
+            assert self.p['n_rad_tran'] - self.p['boundary']['n'] >= self.p['n_cir'] // 2,\
+                'choose number of transition elements at least half the number of cir elements'
         else:
             raise ValueError('FSI mesh only possible for full or quarter circles')
         assert divisible(self.p['n_rad_tran'], 2), 'number of transition elements must be divisible by two'
 
+        # adaptive meshing
         if 'adapt' in self.p:
             assert np.sum(self.p['adapt']['zones']) == 1.0, 'zones must sum up to one'
             assert np.sum(self.p['adapt']['density']) == 1.0, 'densities must sum up to one'
-            assert len(self.p['adapt']['zones']) == len(self.p['adapt']['density']), 'zones and densities must have equal length'
+            assert len(self.p['adapt']['zones']) == len(self.p['adapt']['density']), \
+                'zones and densities must have equal length'
 
             # todo: check if discretization size matches with densities
             # n_adapt = 0
             # for i in range(len(self.p['adapt']['zones'])):
+
+        # boundary layer
+        assert self.p['n_rad_tran'] - self.p['boundary']['n'] >= 1, 'boundary layer too large'
 
     def get_surfaces_cyl(self, pid, ia, ir, ic):
         # store surfaces
@@ -168,7 +177,6 @@ class Mesh(Simulation):
                     self.surf_dict['x_zero'] += [pid]
                 if ic == self.p['n_point_cir'] // 2 or ic == 0:
                     self.surf_dict['y_zero'] += [pid]
-            # pdb.set_trace()
 
     def get_surfaces_cart(self, pid, ia, ix, iy):
         # store surfaces
@@ -189,6 +197,8 @@ class Mesh(Simulation):
 
         # generate quadratic mesh
         rad = self.p['r_inner'] / (self.p['n_rad_f'] - 1)
+        if 'boundary' in self.p:
+            rad = (self.p['r_inner'] - self.p['boundary']['thickness']) / (self.p['n_rad_f'] - 1 - self.p['boundary']['n'])
         delta = (self.p['n_quad'] - 1) * self.p['r_inner'] / (self.p['n_rad_f'] - 1)
 
         # offset from center
@@ -209,16 +219,18 @@ class Mesh(Simulation):
                     self.points[pid] = [x0 + ix * rad, y0 + iy * rad, axi]
                     self.get_surfaces_cart(pid, ia, ix, iy)
                     pid += 1
-            # pdb.set_trace()
 
         # generate transition mesh
         for ia in range(self.p['n_axi'] + 1):
             for ir in range(self.p['n_rad_tran'] - 1):
                 for ic in range(self.p['n_point_cir']):
+                    # boundary index in case of boundary layer
+                    ib = ir - (self.p['n_rad_tran'] - self.p['boundary']['n'] - 1)
+
                     # transition between two radii
-                    i_rad = (ir + 1) / self.p['n_rad_tran']
-                    rad_0 = self.p['r_inner'] * (self.p['n_quad'] - 1) / (self.p['n_rad_f'] - 1)
-                    rad_1 = self.p['r_inner']
+                    i_rad = (ir + 1) / (self.p['n_rad_tran'] - self.p['boundary']['n'])
+                    rad_1 = self.p['r_inner'] - self.p['boundary']['thickness']
+                    rad_0 = rad_1 * (self.p['n_quad'] - 1) / (self.p['n_rad_f'] - 1 - self.p['boundary']['n'])
 
                     # cylindrical coordinate system
                     axi = self.p['height'] * self.f['axi'](ia / self.p['n_axi'])
@@ -226,7 +238,7 @@ class Mesh(Simulation):
                     rad = rad_0 + (rad_1 - rad_0) * i_rad
 
                     # transition from quad mesh to circular mesh
-                    i_trans = (ir + 1) / self.p['n_rad_tran']
+                    i_trans = (ir + 1) / (self.p['n_rad_tran'] - self.p['boundary']['n'])
 
                     # in which octant is the point located?
                     oct = int((ic / self.p['n_cell_cir'] / self.p['n_seg']) * 8.0) % 8
@@ -239,6 +251,11 @@ class Mesh(Simulation):
                             rad_mod = rad * ((1 - i_trans)**2 / np.sin(cir % (np.pi / 2.0)) + 2*i_trans - i_trans**2)
                     else:
                         rad_mod = rad
+
+                    # perfectly circular boundary layer
+                    if ib >= 0:
+                        ib_ratio = (1.0 - ib / (self.p['boundary']['n']))
+                        rad_mod = self.p['r_inner'] - ib_ratio * self.p['boundary']['thickness']
                     self.points[pid] = [rad_mod * np.cos(cir), rad_mod * np.sin(cir), axi]
 
                     self.get_surfaces_cyl(pid, ia, ir, ic)
@@ -555,4 +572,4 @@ def divisible(f, i):
     return f // i == f / i
 
 if __name__ == '__main__':
-    generate_mesh('in_geo/minimal_tube_full.json')
+    generate_mesh('in_geo/fsg_medium.json')

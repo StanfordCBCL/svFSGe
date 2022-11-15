@@ -20,6 +20,9 @@ class Simulation:
         else:
             self.load_params(f_params)
 
+        # set default parameters
+        self.set_defaults()
+
         # validate parameters
         self.validate_params()
 
@@ -28,6 +31,12 @@ class Simulation:
         Manually set parameters (e.g. to default values)
         """
         raise ValueError('Implement set_params in derived class')
+
+    def set_defaults(self):
+        """
+        Validate parameters
+        """
+        raise ValueError('Implement set_defaults in derived class')
 
     def validate_params(self):
         """
