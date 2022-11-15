@@ -1,6 +1,7 @@
 {
-    "fsi": false,
+    "fsi": true,
     "debug": false,
+    "tortuosity": false,
     "mesh": "in_geo/fsg_medium.json",
     "n_procs": {
         "fluid": 10,
@@ -9,8 +10,9 @@
     },
     "fluid": {
         "mu": 4e-06,
+        "rho": 1.06e-6,
         "p0": 13.9868,
-        "q0": 1000.0
+        "q0": 3000.0
     },
     "n_max": {
         "fluid": 10,
@@ -20,8 +22,7 @@
     "coup": {
         "nmax": 200,
         "nmin": 1,
-        "omega0": 0.5,
-        "tol": 1.0e-3
+        "tol": 1.0e-2
     },
     "nmax": 10,
     "fmax": 1.0,
@@ -42,6 +43,7 @@
         "disp": "interface_displacement",
         "geo_fluid": "fluid.vtu",
         "geo_solid": "solid.vtu",
+        "geo_mesh": "mesh.vtu",
         "load_pressure": "interface_pressure.vtp",
         "load_wss": "interface_wss.vtp"
     },

@@ -5,7 +5,7 @@
     "height": 15.0,
     "n_seg": 4,
     "n_axi": 10,
-    "n_cir": 6,
+    "n_cir": 4,
     "n_rad_gr": 1,
-    "n_rad_tran": 3
+    "n_rad_tran": 2
 }
