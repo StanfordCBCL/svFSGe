@@ -6,7 +6,7 @@ Number of spatial dimensions: 3
 Number of time steps: 1
 Number of new time steps: 1
 Time step size: 1.0
-Spectral radius of infinite time step: 0.5
+Spectral radius of infinite time step: 0.0
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: mesh

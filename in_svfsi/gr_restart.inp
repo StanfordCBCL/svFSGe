@@ -11,7 +11,6 @@ Save results to VTK format: 1
 Name prefix of saved VTK files: gr_restart
 Increment in saving VTK files: 1
 Start saving after time step: 1
-#Convert BIN to VTK format: 1
 Save results in folder: gr_restart
 
 Increment in saving restart files: 1

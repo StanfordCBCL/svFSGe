@@ -154,13 +154,13 @@ class svFSI(Simulation):
         with open(self.p['interfaces']['bc_pressure'], 'w') as f:
             f.write('2 1\n')
             f.write('0.0 ' + str(p) + '\n')
-            f.write('100.0 ' + str(p) + '\n')
+            f.write('9999999.0 ' + str(p) + '\n')
 
         # set bc flow
         with open(self.p['interfaces']['bc_flow'], 'w') as f:
             f.write('2 1\n')
             f.write('0.0 ' + str(-q) + '\n')
-            f.write('100.0 ' + str(-q) + '\n')
+            f.write('9999999.0 ' + str(-q) + '\n')
 
         # initialize with poiseuille solution
         # self.poiseuille(t)
@@ -300,20 +300,19 @@ class svFSI(Simulation):
         fname = os.path.join(out, out + '_')
         phys = domain
         i_str = str(i).zfill(3)
-        src = fname + str(self.p['n_max'][domain]).zfill(3) + '.vtu'
         if domain == 'solid':
             # read current iteration
             fields = ['disp', 'jac', 'cauchy', 'stress', 'strain']
-            src = fname + i_str + '.vtu'
+            src = fname + str(self.p['n_max'][domain] * i).zfill(3) + '.vtu'
         elif domain == 'fluid':
             # read converged steady state flow
             fields = ['velo', 'wss', 'press']
+            src = fname + str(self.p['n_max'][domain] * i).zfill(3) + '.vtu'
         elif domain == 'mesh':
             # read fully displaced mesh
             fields = ['disp']
             phys = 'fluid'
-            i_str = str(self.p['n_max'][domain] * (i - 1)).zfill(3)
-            src = fname + i_str + '.vtu'
+            src = fname + str(self.p['n_max'][domain] * (i - 1)).zfill(3) + '.vtu'
         else:
             raise ValueError('Unknown domain ' + domain)
 

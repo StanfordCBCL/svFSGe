@@ -5,7 +5,11 @@
     "height": 15.0,
     "n_seg": 4,
     "n_axi": 10,
-    "n_cir": 4,
+    "n_cir": 2,
     "n_rad_gr": 1,
-    "n_rad_tran": 2
+    "n_rad_tran": 2,
+    "boundary": {
+        "n": 1,
+        "thickness": 0.05
+    }
 }

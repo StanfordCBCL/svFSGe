@@ -1,9 +1,10 @@
 #----------------------------------------------------------------
 # General simulation parameters
 
-Continue previous simulation: 0
+Continue previous simulation: 1
 Number of spatial dimensions: 3
 Number of time steps: 10
+Number of new time steps: 10
 Time step size: 0.01
 
 #Simulation initialization file path: partitioned/fluid.vtu
@@ -15,7 +16,7 @@ Start saving after time step: 1
 Save results in folder: steady
 
 Increment in saving restart files: 1
-Convert BIN to VTK format: 0
+Overwrite restart file: 0
 
 Verbose: 1
 Warning: 0

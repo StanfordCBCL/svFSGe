@@ -53,7 +53,6 @@ class FSG(svFSI):
             print('interrupted')
             pass
 
-        return
         # plot convergence
         try:
             self.plot_convergence()
