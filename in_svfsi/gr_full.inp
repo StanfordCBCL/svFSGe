@@ -25,7 +25,7 @@ Debug: 0
 #----------------------------------------------------------------
 # Mesh data
 Add mesh: msh {
-   Mesh file path:    mesh_tube_fsi/solid/mesh-complete.mesh.vtu
+   Mesh file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Number of variable wall properties: 13
    Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
@@ -41,12 +41,6 @@ Add mesh: msh {
    Add face: outside {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/outside.vtp
    }
-   Add face: x_zero {
-      Face file path: mesh_tube_fsi/solid/mesh-surfaces/x_zero.vtp
-   }
-   Add face: y_zero {
-      Face file path: mesh_tube_fsi/solid/mesh-surfaces/y_zero.vtp
-   }
    Mesh scale factor: 1.0
 }
 
@@ -56,17 +50,12 @@ Add equation: struct {
    Coupled: 1
    Min iterations: 1
    Max iterations: 30
-   Tolerance: 1e-8
+   Tolerance: 1e-11
 
    Constitutive model: GR_Equilibrated
-   Density: 0.0
    Elasticity modulus: 1.0e-16
    Poisson ratio: 0.0
-
-#   Constitutive model: stVK
-#   Density: 0.0
-#   Elasticity modulus: 1000.0
-#   Poisson ratio: 0.0
+   Density: 0.0
 
    Output: Spatial {
       Displacement: t
@@ -82,11 +71,10 @@ Add equation: struct {
 
    LS type: GMRES
    {
-      Tolerance:           1e-9
-      Absolute tolerance:   1e-9
-      Max iterations:      300
+      Tolerance:           1e-3
+      Max iterations:      100
       Krylov space dimension: 300
-      Preconditioner:  Trilinos-ILU
+      Preconditioner:  Trilinos-ILUT
    }
 
    # plane strain
@@ -105,20 +93,14 @@ Add equation: struct {
       Zero out perimeter: f
    }
 
-   # symmetry
-   Add BC: x_zero {
-      Type: Dir
+   # embedding tissue
+   Add BC: outside {
+      Type: Robin
+      Time dependence: Steady
       Value: 0.0
-      Effective direction: (1, 0, 0)
-      Impose on state variable integral: t
-      Zero out perimeter: f
-   }
-   Add BC: y_zero {
-      Type: Dir
-      Value: 0.0
-      Effective direction: (0, 1, 0)
-      Impose on state variable integral: t
-      Zero out perimeter: f
+      Stiffness : 3.0
+      Damping: 0.0
+      Apply along normal direction: f
    }
 
    # step 1: pre-stressing
@@ -129,13 +111,4 @@ Add equation: struct {
       Ramp function: t
       Follower pressure load: t
    }
-
-   # step 2: g&r
-#   Add BC: inside {
-#      Type: Neu
-#      Time dependence: Unsteady
-#      Temporal values file path: load_gr.dat
-#      Ramp function: t
-#      Follower pressure load: t
-#   }
 }

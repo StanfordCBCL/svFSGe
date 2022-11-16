@@ -1,21 +1,22 @@
 #----------------------------------------------------------------
 # General simulation parameters
 
-Continue previous simulation: 1
+Continue previous simulation: 0
 Number of spatial dimensions: 3
-Number of time steps: 1
+Number of time steps: 11
 Time step size: 1.0
 Spectral radius of infinite time step: 0.0
 
 Save results to VTK format: 1
-Name prefix of saved VTK files: gr_restart
+Name prefix of saved VTK files: gr
 Increment in saving VTK files: 1
 Start saving after time step: 1
-Save results in folder: gr_restart
 
 Increment in saving restart files: 1
 
 Overwrite restart file: 0
+Restart file name: gr
+Save results in folder: gr
 
 Verbose: 1
 Warning: 0
@@ -27,7 +28,7 @@ Add mesh: msh {
    Mesh file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Number of variable wall properties: 13
-   Variable wall properties file path: partitioned/solid.vtu
+   Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Add face: start {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/start.vtp
    }
@@ -39,6 +40,12 @@ Add mesh: msh {
    }
    Add face: outside {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/outside.vtp
+   }
+   Add face: x_zero {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/x_zero.vtp
+   }
+   Add face: y_zero {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/y_zero.vtp
    }
    Mesh scale factor: 1.0
 }
@@ -56,6 +63,11 @@ Add equation: struct {
    Poisson ratio: 0.0
    Density: 0.0
 
+#   Constitutive model: stVK
+#   Density: 0.0
+#   Elasticity modulus: 1000.0
+#   Poisson ratio: 0.0
+
    Output: Spatial {
       Displacement: t
       Velocity: t
@@ -71,9 +83,9 @@ Add equation: struct {
    LS type: GMRES
    {
       Tolerance:           1e-3
-      Max iterations:      50
+      Max iterations:      100
       Krylov space dimension: 300
-      Preconditioner:  Trilinos-Diagonal
+      Preconditioner:  Trilinos-ILUT
    }
 
    # plane strain
@@ -87,17 +99,27 @@ Add equation: struct {
    Add BC: end {
       Type: Dir
       Value: 0.0
+#      Type: Neu
+#      Value: -250.0
       Effective direction: (0, 0, 1)
       Impose on state variable integral: t
       Zero out perimeter: f
    }
 
-   # fluid pressure
-   Add BC: inside {
-      Type: Neu
-      Time dependence: Spatial
-      Spatial values file path: interface_pressure.vtp
-      Follower pressure load: t
+   # symmetry
+   Add BC: x_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (1, 0, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
+   }
+   Add BC: y_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 1, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
    }
 
    # embedding tissue
@@ -105,8 +127,26 @@ Add equation: struct {
       Type: Robin
       Time dependence: Steady
       Value: 0.0
-      Stiffness : 3.0
+      Stiffness : 1.0e-3
       Damping: 0.0
       Apply along normal direction: f
    }
+
+   # step 1: pre-stressing
+   Add BC: inside {
+      Type: Neu
+      Time dependence: Unsteady
+      Temporal values file path: load_pre.dat
+      Ramp function: t
+      Follower pressure load: t
+   }
+
+   # step 2: g&r
+#   Add BC: inside {
+#      Type: Neu
+#      Time dependence: Unsteady
+#      Temporal values file path: load_gr.dat
+#      Ramp function: t
+#      Follower pressure load: t
+#   }
 }

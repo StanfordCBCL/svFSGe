@@ -2,7 +2,7 @@
     "fsi": true,
     "debug": false,
     "tortuosity": false,
-    "mesh": "in_geo/fsg_medium.json",
+    "mesh": "in_geo/fsg_coarse.json",
     "n_procs": {
         "fluid": 10,
         "mesh": 10,
@@ -22,7 +22,7 @@
     "coup": {
         "nmax": 200,
         "nmin": 1,
-        "tol": 1.0e-2
+        "tol": 1.0e-3
     },
     "nmax": 10,
     "fmax": 1.0,
@@ -33,9 +33,9 @@
         "solid": "work/repos/svFSI_fork/build/svFSI-build/bin/svFSI"
     },
     "inp": {
-        "fluid": "steady.inp",
-        "mesh": "mesh.inp",
-        "solid": "gr_restart.inp"
+        "fluid": "in_svfsi/steady.inp",
+        "mesh": "in_svfsi/mesh.inp",
+        "solid": "in_svfsi/gr_restart.inp"
     },
     "interfaces": {
         "bc_flow": "steady_flow.dat",

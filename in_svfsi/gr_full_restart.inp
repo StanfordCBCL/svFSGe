@@ -11,14 +11,11 @@ Save results to VTK format: 1
 Name prefix of saved VTK files: gr_restart
 Increment in saving VTK files: 1
 Start saving after time step: 1
-#Convert BIN to VTK format: 1
 Save results in folder: gr_restart
 
 Increment in saving restart files: 1
 
 Overwrite restart file: 0
-#Restart file name: gr
-#Simulation initialization file path: partitioned/initial.vtu
 
 Verbose: 1
 Warning: 0
@@ -31,8 +28,6 @@ Add mesh: msh {
    Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Number of variable wall properties: 13
    Variable wall properties file path: partitioned/solid.vtu
-#   Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
-#   Initial displacements file path: partitioned/initial_solid.vtu
    Add face: start {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/start.vtp
    }
@@ -67,15 +62,6 @@ Add equation: struct {
    Poisson ratio: 0.0
    Density: 0.0
 
-# converges until 8
-#   Density: 1.0e-3
-#   Mass damping: 2e2
-
-#   Constitutive model: stVK
-#   Density: 0.0
-#   Elasticity modulus: 1000.0
-#   Poisson ratio: 0.4
-
    Output: Spatial {
       Displacement: t
       Velocity: t
@@ -90,11 +76,10 @@ Add equation: struct {
 
    LS type: GMRES
    {
-      Tolerance:           1e-9
-      Absolute tolerance:   1e-9
-      Max iterations:      300
+      Tolerance:           1e-3
+      Max iterations:      50
       Krylov space dimension: 300
-      Preconditioner:  Trilinos-ILU
+      Preconditioner:  Trilinos-Diagonal
    }
 
    # plane strain
@@ -102,31 +87,11 @@ Add equation: struct {
       Type: Dir
       Value: 0.0
       Effective direction: (0, 0, 1)
-      Impose on state variable integral: t
-      Zero out perimeter: f
    }
    Add BC: end {
       Type: Dir
       Value: 0.0
       Effective direction: (0, 0, 1)
-      Impose on state variable integral: t
-      Zero out perimeter: f
-   }
-
-   # symmetry
-   Add BC: x_zero {
-      Type: Dir
-      Value: 0.0
-      Effective direction: (1, 0, 0)
-      Impose on state variable integral: t
-      Zero out perimeter: f
-   }
-   Add BC: y_zero {
-      Type: Dir
-      Value: 0.0
-      Effective direction: (0, 1, 0)
-      Impose on state variable integral: t
-      Zero out perimeter: f
    }
 
    # fluid pressure
@@ -134,7 +99,15 @@ Add equation: struct {
       Type: Neu
       Time dependence: Spatial
       Spatial values file path: interface_pressure.vtp
-#      Value: 13.9868
       Follower pressure load: t
+   }
+
+   # embedding tissue
+   Add BC: outside {
+      Type: Robin
+      Time dependence: Steady
+      Stiffness : 1.0
+      Damping: 0.0
+      Apply along normal direction: f
    }
 }

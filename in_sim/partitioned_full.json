@@ -1,7 +1,8 @@
 {
     "fsi": true,
     "debug": false,
-    "mesh": "in_geo/minimal_tube_full.json",
+    "tortuosity": false,
+    "mesh": "in_geo/fsg_full_medium.json",
     "n_procs": {
         "fluid": 10,
         "mesh": 10,
@@ -9,8 +10,9 @@
     },
     "fluid": {
         "mu": 4e-06,
+        "rho": 1.06e-6,
         "p0": 13.9868,
-        "q0": 1000.0
+        "q0": 5000.0
     },
     "n_max": {
         "fluid": 10,
@@ -20,7 +22,6 @@
     "coup": {
         "nmax": 200,
         "nmin": 1,
-        "omega0": 0.5,
         "tol": 1.0e-3
     },
     "nmax": 10,
@@ -32,9 +33,9 @@
         "solid": "work/repos/svFSI_fork/build/svFSI-build/bin/svFSI"
     },
     "inp": {
-        "fluid": "steady_full.inp",
-        "mesh": "mesh_full.inp",
-        "solid": "gr_full_restart.inp"
+        "fluid": "in_svfsi/steady_full.inp",
+        "mesh": "in_svfsi/mesh_full.inp",
+        "solid": "in_svfsi/gr_full_restart.inp"
     },
     "interfaces": {
         "bc_flow": "steady_flow.dat",
@@ -42,6 +43,7 @@
         "disp": "interface_displacement",
         "geo_fluid": "fluid.vtu",
         "geo_solid": "solid.vtu",
+        "geo_mesh": "mesh.vtu",
         "load_pressure": "interface_pressure.vtp",
         "load_wss": "interface_wss.vtp"
     },

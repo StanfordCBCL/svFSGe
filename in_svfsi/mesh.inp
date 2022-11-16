@@ -5,6 +5,9 @@ Continue previous simulation: 0
 Number of spatial dimensions: 3
 Number of time steps: 10
 Time step size: 0.1
+Spectral radius of infinite time step: 0.0
+
+#Simulation initialization file path: partitioned/mesh.vtu
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: mesh
@@ -31,7 +34,13 @@ Add mesh: fluid {
    Add face: f_interface {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
    }
-#   Initial displacements file path: partitioned/initial_fluid.vtu
+   Add face: f_x_zero {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/x_zero.vtp
+   }
+   Add face: f_y_zero {
+      Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
+   }
+#   Initial displacements file path: partitioned/mesh.vtu
 }
 
 #----------------------------------------------------------------
@@ -40,36 +49,45 @@ Add equation: struct {
    Coupled: 1
    Min iterations: 1
    Max iterations: 10
-   Tolerance: 1e-3
+   Tolerance: 1e-6
 
-   Constitutive model: stVK
+   Constitutive model: nHK
    Density: 0.0
    Elasticity modulus: 1.0
    Poisson ratio: 0.3
 
-   LS type: BICG {
-      Preconditioner: FSILS
-      Tolerance: 1e-3
-      Max iterations:      1000
+   LS type: GMRES {
+      Preconditioner: Trilinos-IC
+      Tolerance: 1e-6
+      Max iterations: 200
+      Krylov space dimension: 50
    }
 
    Output: Spatial {
       Displacement: t
    }
 
+   # symmetry
+   Add BC: f_x_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (1, 0, 0)
+   }
+   Add BC: f_y_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 1, 0)
+   }
+
    # plane strain
    Add BC: f_start {
       Type: Dir
       Value: 0.0
-      Impose on state variable integral: t
-      Zero out perimeter: f
       Effective direction: (0, 0, 1)
    }
    Add BC: f_end {
       Type: Dir
       Value: 0.0
-      Impose on state variable integral: t
-      Zero out perimeter: f
       Effective direction: (0, 0, 1)
    }
 
@@ -78,6 +96,5 @@ Add equation: struct {
       Type: Dir
       Time dependence: General
       Temporal and spatial values file path: interface_displacement.dat
-      Zero out perimeter: f
     }
 }

@@ -1,22 +1,22 @@
 #----------------------------------------------------------------
 # General simulation parameters
 
-Continue previous simulation: 0
+Continue previous simulation: 1
 Number of spatial dimensions: 3
-Number of time steps: 11
+Number of time steps: 1
 Time step size: 1.0
 Spectral radius of infinite time step: 0.0
 
 Save results to VTK format: 1
-Name prefix of saved VTK files: gr
+Name prefix of saved VTK files: gr_restart
 Increment in saving VTK files: 1
 Start saving after time step: 1
+#Convert BIN to VTK format: 1
+Save results in folder: gr_restart
 
 Increment in saving restart files: 1
 
 Overwrite restart file: 0
-Restart file name: gr
-Save results in folder: gr
 
 Verbose: 1
 Warning: 0
@@ -25,10 +25,10 @@ Debug: 0
 #----------------------------------------------------------------
 # Mesh data
 Add mesh: msh {
-   Mesh file path:    mesh_tube_fsi/solid/mesh-complete.mesh.vtu
+   Mesh file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Fiber direction file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
    Number of variable wall properties: 13
-   Variable wall properties file path: mesh_tube_fsi/solid/mesh-complete.mesh.vtu
+   Variable wall properties file path: partitioned/solid.vtu
    Add face: start {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/start.vtp
    }
@@ -40,6 +40,12 @@ Add mesh: msh {
    }
    Add face: outside {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/outside.vtp
+   }
+   Add face: x_zero {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/x_zero.vtp
+   }
+   Add face: y_zero {
+      Face file path: mesh_tube_fsi/solid/mesh-surfaces/y_zero.vtp
    }
    Mesh scale factor: 1.0
 }
@@ -56,6 +62,11 @@ Add equation: struct {
    Elasticity modulus: 1.0e-16
    Poisson ratio: 0.0
    Density: 0.0
+
+#   Constitutive model: nHK
+#   Elasticity modulus: 2.0e3
+#   Poisson ratio: 0.0
+#   Density: 1.0
 
    Output: Spatial {
       Displacement: t
@@ -75,6 +86,7 @@ Add equation: struct {
       Max iterations:      50
       Krylov space dimension: 300
       Preconditioner:  Trilinos-Diagonal
+#      Preconditioner: Trilinos-ILUT
    }
 
    # plane strain
@@ -89,6 +101,18 @@ Add equation: struct {
       Effective direction: (0, 0, 1)
    }
 
+   # symmetry
+   Add BC: x_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (1, 0, 0)
+   }
+   Add BC: y_zero {
+      Type: Dir
+      Value: 0.0
+      Effective direction: (0, 1, 0)
+   }
+
    # fluid pressure
    Add BC: inside {
       Type: Neu
@@ -101,8 +125,7 @@ Add equation: struct {
    Add BC: outside {
       Type: Robin
       Time dependence: Steady
-      Value: 0.0
-      Stiffness : 1.0
+      Stiffness : 3.0
       Damping: 0.0
       Apply along normal direction: f
    }
