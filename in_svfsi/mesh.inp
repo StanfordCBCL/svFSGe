@@ -1,13 +1,12 @@
 #----------------------------------------------------------------
 # General simulation parameters
 
-Continue previous simulation: 0
+Continue previous simulation: 1
 Number of spatial dimensions: 3
-Number of time steps: 10
-Time step size: 0.1
-Spectral radius of infinite time step: 0.0
-
-#Simulation initialization file path: partitioned/mesh.vtu
+Number of time steps: 1
+Number of new time steps: 1
+Time step size: 1.0
+Spectral radius of infinite time step: 0.5
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: mesh
@@ -16,6 +15,7 @@ Start saving after time step: 1
 Save results in folder: mesh
 
 Increment in saving restart files: 1
+Overwrite restart file: 0
 
 Verbose: 1
 Warning: 0
@@ -40,24 +40,22 @@ Add mesh: fluid {
    Add face: f_y_zero {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/y_zero.vtp
    }
-#   Initial displacements file path: partitioned/mesh.vtu
 }
 
 #----------------------------------------------------------------
 # Equations
-Add equation: struct {
+Add equation: lElas {
    Coupled: 1
    Min iterations: 1
    Max iterations: 10
    Tolerance: 1e-6
 
-   Constitutive model: nHK
    Density: 0.0
    Elasticity modulus: 1.0
-   Poisson ratio: 0.3
+   Poisson ratio: 0.0
 
    LS type: GMRES {
-      Preconditioner: Trilinos-IC
+      Preconditioner: Trilinos-ICT
       Tolerance: 1e-6
       Max iterations: 200
       Krylov space dimension: 50
@@ -66,6 +64,13 @@ Add equation: struct {
    Output: Spatial {
       Displacement: t
    }
+
+   # prescribed displacements from g&r
+   Add BC: f_interface {
+      Type: Dir
+      Time dependence: General
+      Temporal and spatial values file path: interface_displacement.dat
+    }
 
    # symmetry
    Add BC: f_x_zero {
@@ -90,11 +95,4 @@ Add equation: struct {
       Value: 0.0
       Effective direction: (0, 0, 1)
    }
-
-   # prescribed displacements from g&r
-   Add BC: f_interface {
-      Type: Dir
-      Time dependence: General
-      Temporal and spatial values file path: interface_displacement.dat
-    }
 }

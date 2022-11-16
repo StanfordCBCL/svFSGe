@@ -53,6 +53,7 @@ class FSG(svFSI):
             print('interrupted')
             pass
 
+        return
         # plot convergence
         try:
             self.plot_convergence()
@@ -192,12 +193,12 @@ class FSG(svFSI):
 
         # save input files
         for src in self.p['inp'].values():
-            trg = os.path.join(self.p['f_out'], self.p['root'], src)
+            trg = os.path.join(self.p['f_out'], self.p['root'], os.path.basename(src))
             shutil.copyfile(src, trg)
 
         # save python scripts
         for src in ['fsg.py', 'svfsi.py']:
-            trg = os.path.join(self.p['f_out'], self.p['root'], src)
+            trg = os.path.join(self.p['f_out'], self.p['root'], os.path.basename(src))
             shutil.copyfile(src, trg)
 
         # save material model
@@ -206,14 +207,16 @@ class FSG(svFSI):
         shutil.copyfile(src, trg)
 
     def coup_step_iqn_ils(self, i, t, n):
+        # step 0: mesh movement (not in first first iteration)
+        if self.p['fsi'] and i > 1:
+            if self.step('mesh', i, t):
+                return False
+
         # store previous solutions
         self.prev = self.curr.copy()
 
         # step 1: fluid update
         if self.p['fsi']:
-            if i > 1:
-                if self.step('mesh', i, t):
-                    return False
             if self.step('fluid', i, t):
                 return False
         else:
@@ -276,14 +279,16 @@ class FSG(svFSI):
             return True
 
     def coup_step_relax(self, i, t, n):
+        # step 0: mesh movement (not in first first iteration)
+        if self.p['fsi'] and i > 1:
+            if self.step('mesh', i, t):
+                return False
+
         # store previous solutions
         self.prev = self.curr.copy()
 
         # step 1: fluid update
         if self.p['fsi']:
-            if i > 1:
-                if self.step('mesh', i, t):
-                    return False
             if self.step('fluid', i, t):
                 return False
         else:

@@ -185,19 +185,34 @@ class svFSI(Simulation):
 
     def set_mesh(self, i):
         # write general bc file
+        pre = self.prev.get(('fluid', 'disp', 'int'))
         sol = self.curr.get(('fluid', 'disp', 'int'))
         points = v2n(self.mesh[('int', 'fluid')].GetPointData().GetArray('GlobalNodeID'))
         with open(self.p['interfaces']['disp'] + '.dat', 'w') as f:
-            f.write('3 2 ' + str(len(sol)) + '\n')
-            f.write('0.0\n')
-            f.write('1.0\n')
-            for n, d in zip(points, sol):
+            # don't add time zero twice
+            if i > 2:
+                f.write('3 4 ' + str(len(sol)) + '\n')
+            else:
+                f.write('3 3 ' + str(len(sol)) + '\n')
+
+            # time steps of mesh displacement (subtract 1 since no mesh sim in first first iteration)
+            if i > 2:
+                f.write('0.0\n')
+            f.write(str(float(i - 2)) + '\n')
+            f.write(str(float(i - 1)) + '\n')
+            f.write(str(float(i)) + '\n')
+
+            # write displacements of previous and current iteration
+            for n, disp_new, disp_old in zip(points, sol, pre):
                 f.write(str(n) + '\n')
-                # for _ in range(2):
-                f.write('0.0 0.0 0.0\n')
-                for di in d:
-                    f.write(str(di) + ' ')
-                f.write('\n')
+                if i > 2:
+                    dlist = [np.zeros(3), disp_old, disp_new, disp_new]
+                else:
+                    dlist = [disp_old, disp_new, disp_new]
+                for d in dlist:
+                    for di in d:
+                        f.write(str(di) + ' ')
+                    f.write('\n')
 
         # add solution to fluid mesh
         mesh = self.mesh[('vol', 'fluid')]
@@ -297,6 +312,8 @@ class svFSI(Simulation):
             # read fully displaced mesh
             fields = ['disp']
             phys = 'fluid'
+            i_str = str(self.p['n_max'][domain] * (i - 1)).zfill(3)
+            src = fname + i_str + '.vtu'
         else:
             raise ValueError('Unknown domain ' + domain)
 
@@ -343,8 +360,7 @@ class svFSI(Simulation):
             src = os.path.join(self.p['root'], self.p['interfaces']['geo_' + domain])
             trg = os.path.join(self.p['root'], domain + '_inp_' + i_str + '.vtu')
             shutil.copyfile(src, trg)
-            os.remove(src)
-
+            # os.remove(src)
         return False
 
     def get_profile(self, x_norm, rad_norm, t):
