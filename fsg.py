@@ -53,11 +53,14 @@ class FSG(svFSI):
             print('interrupted')
             pass
 
-        # archive results
-        self.archive()
-
         # plot convergence
-        self.plot_convergence()
+        try:
+            self.plot_convergence()
+        except:
+            pass
+
+        # # archive results
+        self.archive()
 
     def main(self):
         # print reynolds number
@@ -78,7 +81,8 @@ class FSG(svFSI):
                 i += 1
 
                 # perform coupling step
-                status = self.coup_step_fixed(i, t, n)
+                # status = self.coup_step_relax(i, t, n)
+                status = self.coup_step_iqn_ils(i, t, n)
 
                 # check if simulation failed
                 for name, s in self.curr.sol.items():
@@ -201,7 +205,77 @@ class FSG(svFSI):
         trg = os.path.join(self.p['f_out'], self.p['root'], 'FEMbeCmm.cpp')
         shutil.copyfile(src, trg)
 
-    def coup_step_fixed(self, i, t, n):
+    def coup_step_iqn_ils(self, i, t, n):
+        # store previous solutions
+        self.prev = self.curr.copy()
+
+        # step 1: fluid update
+        if self.p['fsi']:
+            if i > 1:
+                if self.step('mesh', i, t):
+                    return False
+            if self.step('fluid', i, t):
+                return False
+        else:
+            self.poiseuille(t)
+
+        # step 2: solid update
+        if self.step('solid', i, t):
+            return False
+
+        # log interface solution
+        dtk = deepcopy(self.curr.get(('solid', 'disp', 'int'))).flatten()
+        dk = deepcopy(self.prev.get(('solid', 'disp', 'int'))).flatten()
+
+        # store increments
+        self.dk['disp'] += [dtk]
+        self.res += [dtk - dk]
+
+        # append difference vectors (must not span different time levels)
+        if t > 0 and n > 0:
+            self.mat_W += [self.dk['disp'][-1] - self.dk['disp'][-2]]
+            self.mat_V += [self.res[-1] - self.res[-2]]
+
+        # get error
+        self.coup_err('solid', 'disp', i, t, n)
+
+        # relax solid update
+        self.coup_omega('disp', i, t, n)
+        if not self.coup_converged(n):
+            # no IQN-ILS update during preloading or first iteration step
+            if t == 0 or n == 0:
+                self.coup_relax('solid', 'disp', i, t, n)
+            else:
+                # trim to max number of considered vectors
+                nq = 10
+                self.mat_V = self.mat_V[-nq:]
+                self.mat_W = self.mat_W[-nq:]
+
+                # QR decomposition
+                qq, rr = np.linalg.qr(np.array(self.mat_V[:nq]).T)
+
+                # tolerance for redundant vectors
+                eps_r = 1.0e-6
+                i_eps = np.where(np.abs(np.diag(rr)) < eps_r)[0]
+
+                # remove linearly dependent vectors
+                if np.any(i_eps):
+                    for i in reversed(i_eps):
+                        self.mat_V.pop(i)
+                        self.mat_W.pop(i)
+                    qq, rr = np.linalg.qr(np.array(self.mat_V[:nq]).T)
+
+                # solve for coefficients
+                bb = np.linalg.solve(rr.T, - np.dot(np.array(self.mat_V), self.res[-1]))
+                cc = np.linalg.solve(rr, bb)
+
+                # update
+                vec_new = dtk + np.dot(np.array(self.mat_W).T, cc)
+                self.curr.add(('solid', 'disp', 'int'), vec_new.reshape((-1, 3)))
+        else:
+            return True
+
+    def coup_step_relax(self, i, t, n):
         # store previous solutions
         self.prev = self.curr.copy()
 

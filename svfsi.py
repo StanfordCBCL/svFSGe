@@ -107,6 +107,8 @@ class svFSI(Simulation):
         self.converged = []
         self.err = defaultdict(list)
         self.res = []
+        self.mat_V = []
+        self.mat_W = []
         self.dk = defaultdict(list)
         self.dtk = defaultdict(list)
 
