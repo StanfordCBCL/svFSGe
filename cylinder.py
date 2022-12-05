@@ -11,13 +11,13 @@ import shutil
 import platform
 import distro
 
-if platform.system() == 'Darwin':
-    usr = '/Users/pfaller/'
-elif platform.system() == 'Linux':
-    if distro.name() == 'CentOS Linux':
-        usr = '/home/users/pfaller/'
+if platform.system() == "Darwin":
+    usr = "/Users/pfaller/"
+elif platform.system() == "Linux":
+    if distro.name() == "CentOS Linux":
+        usr = "/home/users/pfaller/"
     else:
-        usr = '/home/pfaller/'
+        usr = "/home/pfaller/"
 
 from collections import defaultdict
 from vtk.util.numpy_support import numpy_to_vtk as n2v
@@ -26,24 +26,34 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 from simulation import Simulation
 
 # from https://github.com/StanfordCBCL/DataCuration
-sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
-from vtk_functions import read_geo, write_geo, get_points_cells, extract_surface, threshold, clean, cut_plane
+sys.path.append(os.path.join(usr, "work/repos/DataCuration"))
+from vtk_functions import (
+    read_geo,
+    write_geo,
+    get_points_cells,
+    extract_surface,
+    threshold,
+    clean,
+    cut_plane,
+)
 from simulation_io import map_meshes
 
 # cell vertices in (cir, rad, axi)
-coords = [[0, 1, 0],
-        [0, 1, 1],
-        [1, 1, 1],
-        [1, 1, 0],
-        [0, 0, 0],
-        [0, 0, 1],
-        [1, 0, 1],
-        [1, 0, 0]]
+coords = [
+    [0, 1, 0],
+    [0, 1, 1],
+    [1, 1, 1],
+    [1, 1, 0],
+    [0, 0, 0],
+    [0, 0, 1],
+    [1, 0, 1],
+    [1, 0, 0],
+]
 
 
 def spacing(z, p):
-    zones = np.array(p['zones'])
-    densities = np.array(p['density'])
+    zones = np.array(p["zones"])
+    densities = np.array(p["density"])
 
     lengths = np.cumsum(zones)
     bounds = np.cumsum(densities)
@@ -64,31 +74,37 @@ class Mesh(Simulation):
         Simulation.__init__(self, f_params)
 
         # size of quadratic mesh
-        if self.p['n_seg'] == 4:
+        if self.p["n_seg"] == 4:
             # number of layers in quadratic mesh
-            self.p['n_quad'] = self.p['n_cir'] // 2 + 1
+            self.p["n_quad"] = self.p["n_cir"] // 2 + 1
 
             # number of layers in fluid mesh
-            self.p['n_rad_f'] = self.p['n_quad'] + self.p['n_rad_tran']
-        if self.p['n_seg'] == 1:
+            self.p["n_rad_f"] = self.p["n_quad"] + self.p["n_rad_tran"]
+        if self.p["n_seg"] == 1:
             # number of layers in quadratic mesh
-            self.p['n_quad'] = self.p['n_cir'] // 4 + 1
+            self.p["n_quad"] = self.p["n_cir"] // 4 + 1
 
             # number of layers in fluid mesh
-            self.p['n_rad_f'] = self.p['n_quad'] + self.p['n_rad_tran'] * 2
+            self.p["n_rad_f"] = self.p["n_quad"] + self.p["n_rad_tran"] * 2
 
         # number of cells in circumferential direction (one more if the circle is closed)
-        self.p['n_cell_cir'] = self.p['n_cir']
-        self.p['n_point_cir'] = self.p['n_cir']
-        self.p['n_point_eff'] = self.p['n_cir'] * self.p['n_seg']
-        if self.p['n_seg'] > 1:
-            self.p['n_point_cir'] += 1
+        self.p["n_cell_cir"] = self.p["n_cir"]
+        self.p["n_point_cir"] = self.p["n_cir"]
+        self.p["n_point_eff"] = self.p["n_cir"] * self.p["n_seg"]
+        if self.p["n_seg"] > 1:
+            self.p["n_point_cir"] += 1
 
         # total number of points
-        n_points = (self.p['n_axi'] + 1) * (self.p['n_quad'] ** 2 + (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir'])
+        n_points = (self.p["n_axi"] + 1) * (
+            self.p["n_quad"] ** 2
+            + (self.p["n_rad_tran"] + self.p["n_rad_gr"]) * self.p["n_point_cir"]
+        )
 
         # total number of cells
-        n_cells = self.p['n_axi'] * ((self.p['n_quad'] - 1) ** 2 + (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_cell_cir'])
+        n_cells = self.p["n_axi"] * (
+            (self.p["n_quad"] - 1) ** 2
+            + (self.p["n_rad_tran"] + self.p["n_rad_gr"]) * self.p["n_cell_cir"]
+        )
 
         # initialize arrays
         self.points = np.zeros((n_points, 3))
@@ -100,263 +116,350 @@ class Mesh(Simulation):
 
         self.point_data = {}
         self.cell_data = {}
-        
+
         # file name
-        self.p['fname'] = 'tube.vtu'
+        self.p["fname"] = "tube.vtu"
 
     def set_defaults(self):
         # axial mesh function
         self.f = {}
-        if 'adapt' in self.p:
-            self.f['axi'] = lambda z: spacing(z, self.p['adapt'])
+        if "adapt" in self.p:
+            self.f["axi"] = lambda z: spacing(z, self.p["adapt"])
         # self.f['axi'] = lambda z: np.sqrt(z)
         # self.f['axi'] = lambda z: z**2
         # self.f['axi'] = lambda z: np.log(z + 1) / np.log(2)
         # self.f['axi'] = lambda z: np.exp(z ** 2) - 1
         else:
-            self.f['axi'] = lambda z: z
-        if 'boundary' not in self.p:
-            self.p['boundary'] = {'n': 0, 'thickness': 0.0}
+            self.f["axi"] = lambda z: z
+        if "boundary" not in self.p:
+            self.p["boundary"] = {"n": 0, "thickness": 0.0}
 
     def validate_params(self):
-        if self.p['n_seg'] == 1:
-            assert divisible(self.p['n_cir'], 8), 'number of elements in cir direction must be divisible by eight'
-            assert self.p['n_rad_tran']- self.p['boundary']['n'] >= self.p['n_cir'] // 4, \
-                'choose number of transition elements at least a quarter the number of cir elements'
-        elif self.p['n_seg'] == 4:
-            assert divisible(self.p['n_cir'], 2), 'number of elements in cir direction must be divisible by two'
-            assert self.p['n_rad_tran'] - self.p['boundary']['n'] >= self.p['n_cir'] // 2,\
-                'choose number of transition elements at least half the number of cir elements'
+        if self.p["n_seg"] == 1:
+            assert divisible(
+                self.p["n_cir"], 8
+            ), "number of elements in cir direction must be divisible by eight"
+            assert (
+                self.p["n_rad_tran"] - self.p["boundary"]["n"] >= self.p["n_cir"] // 4
+            ), "choose number of transition elements at least a quarter the number of cir elements"
+        elif self.p["n_seg"] == 4:
+            assert divisible(
+                self.p["n_cir"], 2
+            ), "number of elements in cir direction must be divisible by two"
+            assert (
+                self.p["n_rad_tran"] - self.p["boundary"]["n"] >= self.p["n_cir"] // 2
+            ), "choose number of transition elements at least half the number of cir elements"
         else:
-            raise ValueError('FSI mesh only possible for full or quarter circles')
-        assert divisible(self.p['n_rad_tran'], 2), 'number of transition elements must be divisible by two'
+            raise ValueError("FSI mesh only possible for full or quarter circles")
+        assert divisible(
+            self.p["n_rad_tran"], 2
+        ), "number of transition elements must be divisible by two"
 
         # adaptive meshing
-        if 'adapt' in self.p:
-            assert np.sum(self.p['adapt']['zones']) == 1.0, 'zones must sum up to one'
-            assert np.sum(self.p['adapt']['density']) == 1.0, 'densities must sum up to one'
-            assert len(self.p['adapt']['zones']) == len(self.p['adapt']['density']), \
-                'zones and densities must have equal length'
+        if "adapt" in self.p:
+            assert np.sum(self.p["adapt"]["zones"]) == 1.0, "zones must sum up to one"
+            assert (
+                np.sum(self.p["adapt"]["density"]) == 1.0
+            ), "densities must sum up to one"
+            assert len(self.p["adapt"]["zones"]) == len(
+                self.p["adapt"]["density"]
+            ), "zones and densities must have equal length"
 
             # todo: check if discretization size matches with densities
             # n_adapt = 0
             # for i in range(len(self.p['adapt']['zones'])):
 
         # boundary layer
-        assert self.p['n_rad_tran'] - self.p['boundary']['n'] >= 1, 'boundary layer too large'
+        assert (
+            self.p["n_rad_tran"] - self.p["boundary"]["n"] >= 1
+        ), "boundary layer too large"
 
     def get_surfaces_cyl(self, pid, ia, ir, ic):
         # store surfaces
-        if ir == self.p['n_rad_tran'] - 1:
-            self.surf_dict['interface'] += [pid]
-        if ir == self.p['n_rad_tran'] + self.p['n_rad_gr'] - 1:
-            self.surf_dict['outside'] += [pid]
+        if ir == self.p["n_rad_tran"] - 1:
+            self.surf_dict["interface"] += [pid]
+        if ir == self.p["n_rad_tran"] + self.p["n_rad_gr"] - 1:
+            self.surf_dict["outside"] += [pid]
         if ia == 0:
-            self.surf_dict['start'] += [pid]
-        if ia == self.p['n_axi']:
-            self.surf_dict['end'] += [pid]
-        
-        # cut-surfaces only exist for cylinder sections, not the whole cylinder
-        if self.p['n_seg'] > 1:
-            if ic == 0:
-                self.surf_dict['y_zero'] += [pid]
-            if ic == self.p['n_point_cir'] - 1:
-                self.surf_dict['x_zero'] += [pid]
+            self.surf_dict["start"] += [pid]
+        if ia == self.p["n_axi"]:
+            self.surf_dict["end"] += [pid]
 
-        if self.p['n_seg'] == 1:
+        # cut-surfaces only exist for cylinder sections, not the whole cylinder
+        if self.p["n_seg"] > 1:
+            if ic == 0:
+                self.surf_dict["y_zero"] += [pid]
+            if ic == self.p["n_point_cir"] - 1:
+                self.surf_dict["x_zero"] += [pid]
+
+        if self.p["n_seg"] == 1:
             # surfaces to apply tortuosity perturbation
-            if ir == self.p['n_rad_tran'] - 1:
-                if abs(ia - self.p['n_axi'] // 4) <= 1 and abs(ic - 3 * self.p['n_point_cir'] // 4) <= 1:
-                    self.surf_dict['tortuosity'] += [pid]
-                if abs(ia - 3 * self.p['n_axi'] // 4) <= 1 and abs(ic - self.p['n_point_cir'] // 4) <= 1:
-                    self.surf_dict['tortuosity'] += [pid]
+            if ir == self.p["n_rad_tran"] - 1:
+                if (
+                    abs(ia - self.p["n_axi"] // 4) <= 1
+                    and abs(ic - 3 * self.p["n_point_cir"] // 4) <= 1
+                ):
+                    self.surf_dict["tortuosity"] += [pid]
+                if (
+                    abs(ia - 3 * self.p["n_axi"] // 4) <= 1
+                    and abs(ic - self.p["n_point_cir"] // 4) <= 1
+                ):
+                    self.surf_dict["tortuosity"] += [pid]
 
             # surfaces to prevent x- and y-movement
-            if ia <= 1 or ia >= self.p['n_axi'] - 1:
-                if ic == self.p['n_point_cir'] // 4 or ic == 3 * self.p['n_point_cir'] // 4:
-                    self.surf_dict['x_zero'] += [pid]
-                if ic == self.p['n_point_cir'] // 2 or ic == 0:
-                    self.surf_dict['y_zero'] += [pid]
+            if ia <= 1 or ia >= self.p["n_axi"] - 1:
+                if (
+                    ic == self.p["n_point_cir"] // 4
+                    or ic == 3 * self.p["n_point_cir"] // 4
+                ):
+                    self.surf_dict["x_zero"] += [pid]
+                if ic == self.p["n_point_cir"] // 2 or ic == 0:
+                    self.surf_dict["y_zero"] += [pid]
 
     def get_surfaces_cart(self, pid, ia, ix, iy):
         # store surfaces
         if ia == 0:
-            self.surf_dict['start'] += [pid]
-        if ia == self.p['n_axi']:
-            self.surf_dict['end'] += [pid]
+            self.surf_dict["start"] += [pid]
+        if ia == self.p["n_axi"]:
+            self.surf_dict["end"] += [pid]
 
         # cut-surfaces only exist for cylinder sections, not the whole cylinder
-        if self.p['n_seg'] > 1:
+        if self.p["n_seg"] > 1:
             if iy == 0:
-                self.surf_dict['y_zero'] += [pid]
+                self.surf_dict["y_zero"] += [pid]
             if ix == 0:
-                self.surf_dict['x_zero'] += [pid]
-    
+                self.surf_dict["x_zero"] += [pid]
+
     def generate_points(self):
         pid = 0
 
         # generate quadratic mesh
-        rad = self.p['r_inner'] / (self.p['n_rad_f'] - 1)
-        if 'boundary' in self.p:
-            rad = (self.p['r_inner'] - self.p['boundary']['thickness']) / (self.p['n_rad_f'] - 1 - self.p['boundary']['n'])
-        delta = (self.p['n_quad'] - 1) * self.p['r_inner'] / (self.p['n_rad_f'] - 1)
+        rad = self.p["r_inner"] / (self.p["n_rad_f"] - 1)
+        if "boundary" in self.p:
+            rad = (self.p["r_inner"] - self.p["boundary"]["thickness"]) / (
+                self.p["n_rad_f"] - 1 - self.p["boundary"]["n"]
+            )
+        delta = (self.p["n_quad"] - 1) * self.p["r_inner"] / (self.p["n_rad_f"] - 1)
 
         # offset from center
-        if self.p['n_seg'] == 1:
+        if self.p["n_seg"] == 1:
             x0 = -delta
             y0 = -delta
             rad *= 2.0
-        elif self.p['n_seg'] == 4:
+        elif self.p["n_seg"] == 4:
             x0 = 0.0
             y0 = 0.0
         else:
-            raise ValueError('not implemented for n_seg=' + str(self.p['n_seg']))
+            raise ValueError("not implemented for n_seg=" + str(self.p["n_seg"]))
 
-        for ia in range(self.p['n_axi'] + 1):
-            axi = self.p['height'] * self.f['axi'](ia / self.p['n_axi'])
-            for iy in range(self.p['n_quad']):
-                for ix in range(self.p['n_quad']):
+        for ia in range(self.p["n_axi"] + 1):
+            axi = self.p["height"] * self.f["axi"](ia / self.p["n_axi"])
+            for iy in range(self.p["n_quad"]):
+                for ix in range(self.p["n_quad"]):
                     self.points[pid] = [x0 + ix * rad, y0 + iy * rad, axi]
                     self.get_surfaces_cart(pid, ia, ix, iy)
                     pid += 1
 
         # generate transition mesh
-        for ia in range(self.p['n_axi'] + 1):
-            for ir in range(self.p['n_rad_tran'] - 1):
-                for ic in range(self.p['n_point_cir']):
+        for ia in range(self.p["n_axi"] + 1):
+            for ir in range(self.p["n_rad_tran"] - 1):
+                for ic in range(self.p["n_point_cir"]):
                     # boundary index in case of boundary layer
-                    ib = ir - (self.p['n_rad_tran'] - self.p['boundary']['n'] - 1)
+                    ib = ir - (self.p["n_rad_tran"] - self.p["boundary"]["n"] - 1)
 
                     # transition between two radii
-                    i_rad = (ir + 1) / (self.p['n_rad_tran'] - self.p['boundary']['n'])
-                    rad_1 = self.p['r_inner'] - self.p['boundary']['thickness']
-                    rad_0 = rad_1 * (self.p['n_quad'] - 1) / (self.p['n_rad_f'] - 1 - self.p['boundary']['n'])
+                    i_rad = (ir + 1) / (self.p["n_rad_tran"] - self.p["boundary"]["n"])
+                    rad_1 = self.p["r_inner"] - self.p["boundary"]["thickness"]
+                    rad_0 = (
+                        rad_1
+                        * (self.p["n_quad"] - 1)
+                        / (self.p["n_rad_f"] - 1 - self.p["boundary"]["n"])
+                    )
 
                     # cylindrical coordinate system
-                    axi = self.p['height'] * self.f['axi'](ia / self.p['n_axi'])
-                    cir = 2 * np.pi * ic / self.p['n_cell_cir'] / self.p['n_seg']
+                    axi = self.p["height"] * self.f["axi"](ia / self.p["n_axi"])
+                    cir = 2 * np.pi * ic / self.p["n_cell_cir"] / self.p["n_seg"]
                     rad = rad_0 + (rad_1 - rad_0) * i_rad
 
                     # transition from quad mesh to circular mesh
-                    i_trans = (ir + 1) / (self.p['n_rad_tran'] - self.p['boundary']['n'])
+                    i_trans = (ir + 1) / (
+                        self.p["n_rad_tran"] - self.p["boundary"]["n"]
+                    )
 
                     # in which octant is the point located?
-                    oct = int((ic / self.p['n_cell_cir'] / self.p['n_seg']) * 8.0) % 8
+                    oct = int((ic / self.p["n_cell_cir"] / self.p["n_seg"]) * 8.0) % 8
 
                     # check if point not on axis
-                    if (ic * 4.0 / self.p['n_cell_cir'] / self.p['n_seg']) % 1 != 0:
+                    if (ic * 4.0 / self.p["n_cell_cir"] / self.p["n_seg"]) % 1 != 0:
                         if oct % 2 == 0:
-                            rad_mod = rad * ((1 - i_trans)**2 / np.cos(cir % (np.pi / 2.0)) + 2*i_trans - i_trans**2)
+                            rad_mod = rad * (
+                                (1 - i_trans) ** 2 / np.cos(cir % (np.pi / 2.0))
+                                + 2 * i_trans
+                                - i_trans**2
+                            )
                         else:
-                            rad_mod = rad * ((1 - i_trans)**2 / np.sin(cir % (np.pi / 2.0)) + 2*i_trans - i_trans**2)
+                            rad_mod = rad * (
+                                (1 - i_trans) ** 2 / np.sin(cir % (np.pi / 2.0))
+                                + 2 * i_trans
+                                - i_trans**2
+                            )
                     else:
                         rad_mod = rad
 
                     # perfectly circular boundary layer
                     if ib >= 0:
-                        ib_ratio = (1.0 - ib / (self.p['boundary']['n']))
-                        rad_mod = self.p['r_inner'] - ib_ratio * self.p['boundary']['thickness']
-                    self.points[pid] = [rad_mod * np.cos(cir), rad_mod * np.sin(cir), axi]
+                        ib_ratio = 1.0 - ib / (self.p["boundary"]["n"])
+                        rad_mod = (
+                            self.p["r_inner"]
+                            - ib_ratio * self.p["boundary"]["thickness"]
+                        )
+                    self.points[pid] = [
+                        rad_mod * np.cos(cir),
+                        rad_mod * np.sin(cir),
+                        axi,
+                    ]
 
                     self.get_surfaces_cyl(pid, ia, ir, ic)
                     pid += 1
 
             # generate circular g&r mesh
-            for ir in range(self.p['n_rad_gr'] + 1):
-                for ic in range(self.p['n_point_cir']):
+            for ir in range(self.p["n_rad_gr"] + 1):
+                for ic in range(self.p["n_point_cir"]):
                     # cylindrical coordinate system
-                    axi = self.p['height'] * self.f['axi'](ia / self.p['n_axi'])
-                    cir = 2 * np.pi * ic / self.p['n_cell_cir'] / self.p['n_seg']
-                    rad = self.p['r_inner'] + (self.p['r_outer'] - self.p['r_inner']) * (ir) / self.p['n_rad_gr']
+                    axi = self.p["height"] * self.f["axi"](ia / self.p["n_axi"])
+                    cir = 2 * np.pi * ic / self.p["n_cell_cir"] / self.p["n_seg"]
+                    rad = (
+                        self.p["r_inner"]
+                        + (self.p["r_outer"] - self.p["r_inner"])
+                        * (ir)
+                        / self.p["n_rad_gr"]
+                    )
 
                     self.points[pid] = [rad * np.cos(cir), rad * np.sin(cir), axi]
-        
+
                     # store (normalized) coordinates
-                    self.cosy[pid, 0] = rad # / r_outer
-                    self.cosy[pid, 1] = ic / self.p['n_cell_cir'] / self.p['n_seg']
-                    self.cosy[pid, 2] = ia / self.p['n_axi']
+                    self.cosy[pid, 0] = rad  # / r_outer
+                    self.cosy[pid, 1] = ic / self.p["n_cell_cir"] / self.p["n_seg"]
+                    self.cosy[pid, 2] = ia / self.p["n_axi"]
                     self.cosy[pid, 3:6] = self.points[pid, :]
                     # wss
-                    self.cosy[pid, 6] = self.p['n_seg'] * 4.0 * 0.04 * 0.1 / np.pi / self.p['r_inner']**3
+                    self.cosy[pid, 6] = (
+                        self.p["n_seg"]
+                        * 4.0
+                        * 0.04
+                        * 0.1
+                        / np.pi
+                        / self.p["r_inner"] ** 3
+                    )
                     # time
                     self.cosy[pid, 7] = 0.0
                     # interface id
-                    self.cosy[pid, 8] = ia * self.p['n_point_cir'] + ic
+                    self.cosy[pid, 8] = ia * self.p["n_point_cir"] + ic
                     # interface node id, dwss, wss_old
                     self.cosy[pid, 9:] = 0.0
                     self.cosy[pid, 12] = 1337
-        
-                    # store fibers
-                    self.fiber_dict['axi'][pid] = [0, 0, 1]
-                    self.fiber_dict['rad'][pid] = [-np.cos(cir), -np.sin(cir), 0]
-                    self.fiber_dict['cir'][pid] = [-np.sin(cir), np.cos(cir), 0]
 
-                    self.get_surfaces_cyl(pid, ia, self.p['n_rad_tran'] + ir - 1, ic)
+                    # store fibers
+                    self.fiber_dict["axi"][pid] = [0, 0, 1]
+                    self.fiber_dict["rad"][pid] = [-np.cos(cir), -np.sin(cir), 0]
+                    self.fiber_dict["cir"][pid] = [-np.sin(cir), np.cos(cir), 0]
+
+                    self.get_surfaces_cyl(pid, ia, self.p["n_rad_tran"] + ir - 1, ic)
                     pid += 1
 
         # add curve
-        if 'curve' in self.p:
+        if "curve" in self.p:
             curve = np.cos(self.points[:, 2] / np.max(self.points[:, 2]) * 2.0 * np.pi)
-            self.points[:, 0] += self.p['curve'] * (1.0 - curve) / 2.0
+            self.points[:, 0] += self.p["curve"] * (1.0 - curve) / 2.0
 
     def generate_cells(self):
         cid = 0
 
         # generate quadratic mesh
-        for ia in range(self.p['n_axi']):
-            for iy in range(self.p['n_quad'] - 1):
-                for ix in range(self.p['n_quad'] - 1):
+        for ia in range(self.p["n_axi"]):
+            for iy in range(self.p["n_quad"] - 1):
+                for ix in range(self.p["n_quad"] - 1):
                     ids = []
                     for c in coords:
-                        ids += [(iy + c[0]) * self.p['n_quad'] + ix + c[1] + (ia + c[2]) * self.p['n_quad'] ** 2]
+                        ids += [
+                            (iy + c[0]) * self.p["n_quad"]
+                            + ix
+                            + c[1]
+                            + (ia + c[2]) * self.p["n_quad"] ** 2
+                        ]
                     self.cells[cid] = ids
-                    self.vol_dict['fluid'] += [cid]
+                    self.vol_dict["fluid"] += [cid]
                     cid += 1
 
         # generate transition mesh
-        for ia in range(self.p['n_axi']):
-            for ic in range(self.p['n_cell_cir']):
+        for ia in range(self.p["n_axi"]):
+            for ic in range(self.p["n_cell_cir"]):
                 ids = []
 
                 # number of segments per quad edge
-                ns = self.p['n_cell_cir'] * self.p['n_seg'] // 4
+                ns = self.p["n_cell_cir"] * self.p["n_seg"] // 4
 
                 # quad edges (looking in negative z): 0: east, 1: north, 2: west, 3: south
-                qua = int((ic + self.p['n_cell_cir']//8) / self.p['n_cell_cir'] / self.p['n_seg'] * 4.0) % 4
+                qua = (
+                    int(
+                        (ic + self.p["n_cell_cir"] // 8)
+                        / self.p["n_cell_cir"]
+                        / self.p["n_seg"]
+                        * 4.0
+                    )
+                    % 4
+                )
 
                 # circumferential coordinate along each quad edge
-                icq = (ic + ns // 2 - qua * ns) % self.p['n_cell_cir']
+                icq = (ic + ns // 2 - qua * ns) % self.p["n_cell_cir"]
 
                 # loop element nodes
                 for c in coords:
                     # quarter circle
-                    if self.p['n_seg'] == 4:
+                    if self.p["n_seg"] == 4:
                         # circular side
                         if c[1] == 1:
-                            ids += [ic + c[0] + (self.p['n_axi'] + 1) * self.p['n_quad'] ** 2 + (ia + c[2]) * (
-                                        self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir']]
+                            ids += [
+                                ic
+                                + c[0]
+                                + (self.p["n_axi"] + 1) * self.p["n_quad"] ** 2
+                                + (ia + c[2])
+                                * (self.p["n_rad_tran"] + self.p["n_rad_gr"])
+                                * self.p["n_point_cir"]
+                            ]
 
                         # quadratic side
                         else:
-                            if ic < self.p['n_cell_cir'] // 2:
-                                ids += [self.p['n_quad'] - 1 + (ic + c[0]) * self.p['n_quad'] + (ia + c[2]) * self.p[
-                                    'n_quad'] ** 2]
+                            if ic < self.p["n_cell_cir"] // 2:
+                                ids += [
+                                    self.p["n_quad"]
+                                    - 1
+                                    + (ic + c[0]) * self.p["n_quad"]
+                                    + (ia + c[2]) * self.p["n_quad"] ** 2
+                                ]
                             else:
                                 ids += [
-                                    self.p['n_quad'] ** 2 - 1 + self.p['n_cell_cir'] // 2 - ic - c[0] + (ia + c[2]) *
-                                    self.p['n_quad'] ** 2]
+                                    self.p["n_quad"] ** 2
+                                    - 1
+                                    + self.p["n_cell_cir"] // 2
+                                    - ic
+                                    - c[0]
+                                    + (ia + c[2]) * self.p["n_quad"] ** 2
+                                ]
                     # full circle
-                    elif self.p['n_seg'] == 1:
+                    elif self.p["n_seg"] == 1:
                         # circular side
                         if c[1] == 1:
                             # starting node
-                            offset = (self.p['n_axi'] + 1) * self.p['n_quad'] ** 2
+                            offset = (self.p["n_axi"] + 1) * self.p["n_quad"] ** 2
 
                             # axial step
-                            fa = (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir']
+                            fa = (self.p["n_rad_tran"] + self.p["n_rad_gr"]) * self.p[
+                                "n_point_cir"
+                            ]
 
                             # closing the circle
-                            if qua == 0 and ic + c[0] == self.p['n_cell_cir']:
+                            if qua == 0 and ic + c[0] == self.p["n_cell_cir"]:
                                 fc = 0
                             else:
                                 fc = 1
@@ -364,93 +467,112 @@ class Mesh(Simulation):
                         # quadratic side
                         else:
                             # axial step
-                            fa = self.p['n_quad'] ** 2
+                            fa = self.p["n_quad"] ** 2
                             # east
                             if qua == 0:
-                                offset = self.p['n_quad'] - 1
-                                fc = self.p['n_quad']
+                                offset = self.p["n_quad"] - 1
+                                fc = self.p["n_quad"]
                             # north
                             elif qua == 1:
-                                offset = self.p['n_quad'] ** 2 - 1
+                                offset = self.p["n_quad"] ** 2 - 1
                                 fc = -1
                             # west
                             elif qua == 2:
-                                offset = self.p['n_quad'] * (self.p['n_quad'] - 1)
-                                fc = - self.p['n_quad']
+                                offset = self.p["n_quad"] * (self.p["n_quad"] - 1)
+                                fc = -self.p["n_quad"]
                             # south
                             elif qua == 3:
                                 offset = 0
                                 fc = 1
                             ids += [offset + (icq + c[0]) * fc + (ia + c[2]) * fa]
                     else:
-                        raise ValueError('not implemented for n_seg=' + str(self.p['n_seg']))
+                        raise ValueError(
+                            "not implemented for n_seg=" + str(self.p["n_seg"])
+                        )
                 self.cells[cid] = ids
-                self.vol_dict['fluid'] += [cid]
+                self.vol_dict["fluid"] += [cid]
                 cid += 1
         # generate circular g&r mesh
-        for ia in range(self.p['n_axi']):
-            for ir in range(self.p['n_rad_tran'] + self.p['n_rad_gr'] - 1):
-                for ic in range(self.p['n_cell_cir']):
+        for ia in range(self.p["n_axi"]):
+            for ir in range(self.p["n_rad_tran"] + self.p["n_rad_gr"] - 1):
+                for ic in range(self.p["n_cell_cir"]):
                     ids = []
                     for c in coords:
-                        ids += [(self.p['n_axi'] + 1) * self.p['n_quad'] ** 2 + (ic + c[0]) % self.p['n_point_cir'] + (ir + c[1]) * self.p['n_point_cir'] + (ia + c[2]) * (self.p['n_rad_tran'] + self.p['n_rad_gr']) * self.p['n_point_cir']]
+                        ids += [
+                            (self.p["n_axi"] + 1) * self.p["n_quad"] ** 2
+                            + (ic + c[0]) % self.p["n_point_cir"]
+                            + (ir + c[1]) * self.p["n_point_cir"]
+                            + (ia + c[2])
+                            * (self.p["n_rad_tran"] + self.p["n_rad_gr"])
+                            * self.p["n_point_cir"]
+                        ]
                     self.cells[cid] = ids
 
-                    if ir < self.p['n_rad_tran'] - 1:
-                        self.vol_dict['fluid'] += [cid]
+                    if ir < self.p["n_rad_tran"] - 1:
+                        self.vol_dict["fluid"] += [cid]
                     else:
-                        self.vol_dict['solid'] += [cid]
+                        self.vol_dict["solid"] += [cid]
                     cid += 1
 
         # label according to cell centers
         cell_cent = np.mean(self.points[self.cells], axis=1)
-        for i, c in enumerate(['x', 'y']):
-            self.vol_dict[c + '_seg'] = np.where(cell_cent[:, i] > 0.0)[0].tolist()
+        for i, c in enumerate(["x", "y"]):
+            self.vol_dict[c + "_seg"] = np.where(cell_cent[:, i] > 0.0)[0].tolist()
 
         # assemble point data
-        self.point_data = {'GlobalNodeID': np.arange(len(self.points)) + 1,
-                      'FIB_DIR': np.array(self.fiber_dict['rad']),
-                      'varWallProps': self.cosy}
+        self.point_data = {
+            "GlobalNodeID": np.arange(len(self.points)) + 1,
+            "FIB_DIR": np.array(self.fiber_dict["rad"]),
+            "varWallProps": self.cosy,
+        }
         for name, ids in self.surf_dict.items():
-            self.point_data['ids_' + name] = np.zeros(len(self.points), dtype=int)
-            self.point_data['ids_' + name][ids] = 1
+            self.point_data["ids_" + name] = np.zeros(len(self.points), dtype=int)
+            self.point_data["ids_" + name][ids] = 1
 
         # assemble cell data
-        self.cell_data = {'GlobalElementID': np.expand_dims(np.arange(len(self.cells)) + 1, axis=1)}
+        self.cell_data = {
+            "GlobalElementID": np.expand_dims(np.arange(len(self.cells)) + 1, axis=1)
+        }
         for name, ids in self.vol_dict.items():
-            self.cell_data['ids_' + name] = np.zeros(len(self.cells))
-            self.cell_data['ids_' + name][ids] = 1
-            self.cell_data['ids_' + name] = np.expand_dims(self.cell_data['ids_' + name], axis=1)
-        cells = [('hexahedron', [cell]) for cell in self.cells]
+            self.cell_data["ids_" + name] = np.zeros(len(self.cells))
+            self.cell_data["ids_" + name][ids] = 1
+            self.cell_data["ids_" + name] = np.expand_dims(
+                self.cell_data["ids_" + name], axis=1
+            )
+        cells = [("hexahedron", [cell]) for cell in self.cells]
 
         # export mesh
-        mesh = meshio.Mesh(self.points, cells, point_data=self.point_data, cell_data=self.cell_data)
-        mesh.write(self.p['fname'])
+        mesh = meshio.Mesh(
+            self.points, cells, point_data=self.point_data, cell_data=self.cell_data
+        )
+        mesh.write(self.p["fname"])
 
     def extract_svFSI(self):
         # read volume mesh in vtk
-        f_fsi = os.path.join(self.p['f_out'], self.p['fname'])
-        os.makedirs(self.p['f_out'], exist_ok=True)
-        shutil.move(self.p['fname'], f_fsi)
+        f_fsi = os.path.join(self.p["f_out"], self.p["fname"])
+        os.makedirs(self.p["f_out"], exist_ok=True)
+        shutil.move(self.p["fname"], f_fsi)
         vol = read_geo(f_fsi).GetOutput()
 
         surf_ids = {}
         points_inlet = []
-        for f in ['solid', 'fluid']:
+        for f in ["solid", "fluid"]:
             # select sub-mesh
-            vol_f = threshold(vol, 1, 'ids_' + f).GetOutput()
+            vol_f = threshold(vol, 1, "ids_" + f).GetOutput()
 
             # reset global ids
             n_array = n2v(np.arange(vol_f.GetNumberOfPoints()) + 1)
             e_array = n2v(np.arange(vol_f.GetNumberOfCells()) + 1)
-            n_array.SetName('GlobalNodeID')
-            e_array.SetName('GlobalElementID')
+            n_array.SetName("GlobalNodeID")
+            e_array.SetName("GlobalElementID")
             vol_f.GetPointData().AddArray(n_array)
             vol_f.GetCellData().AddArray(e_array)
 
             # make output dirs
-            os.makedirs(os.path.join(self.p['f_out'], f), exist_ok=True)
-            os.makedirs(os.path.join(self.p['f_out'], f, 'mesh-surfaces'), exist_ok=True)
+            os.makedirs(os.path.join(self.p["f_out"], f), exist_ok=True)
+            os.makedirs(
+                os.path.join(self.p["f_out"], f, "mesh-surfaces"), exist_ok=True
+            )
 
             # map point data to cell data
             p2c = vtk.vtkPointDataToCellData()
@@ -469,11 +591,11 @@ class Mesh(Simulation):
             # threshold surfaces
             for name in self.surf_dict.keys():
                 # interior quad elements
-                if self.p['n_seg'] == 1 and '_zero' in name:
+                if self.p["n_seg"] == 1 and "_zero" in name:
                     # threshold circle segments first
                     thresh = vtk.vtkThreshold()
                     thresh.SetInputData(vol_f)
-                    thresh.SetInputArrayToProcess(0, 0, 0, 1, 'ids_' + name[0] + '_seg')
+                    thresh.SetInputArrayToProcess(0, 0, 0, 1, "ids_" + name[0] + "_seg")
                     thresh.SetUpperThreshold(1)
                     thresh.SetLowerThreshold(1)
                     thresh.Update()
@@ -490,7 +612,7 @@ class Mesh(Simulation):
                 # select only current surface
                 thresh = vtk.vtkThreshold()
                 thresh.SetInputData(inp)
-                thresh.SetInputArrayToProcess(0, 0, 0, 0, 'ids_' + name)
+                thresh.SetInputArrayToProcess(0, 0, 0, 0, "ids_" + name)
                 thresh.SetUpperThreshold(1)
                 thresh.SetLowerThreshold(1)
                 thresh.Update()
@@ -498,39 +620,44 @@ class Mesh(Simulation):
                 if surf.GetNumberOfPoints() > 0:
                     surf = clean(extract_surface(surf))
 
-                fout = os.path.join(self.p['f_out'], f, 'mesh-surfaces', name + '.vtp')
+                fout = os.path.join(self.p["f_out"], f, "mesh-surfaces", name + ".vtp")
                 write_geo(fout, extract_surface(surf))
 
                 # get new GlobalNodeIDs of surface points
-                surf_ids[f + '_' + name] = v2n(surf.GetPointData().GetArray('GlobalNodeID')).tolist()
+                surf_ids[f + "_" + name] = v2n(
+                    surf.GetPointData().GetArray("GlobalNodeID")
+                ).tolist()
 
                 # store inlet points (to calculate flow profile later)
-                if f == 'fluid' and name == 'start':
+                if f == "fluid" and name == "start":
                     points_inlet = v2n(surf.GetPoints().GetData())
 
             # export volume mesh
-            write_geo(os.path.join(self.p['f_out'], f, 'mesh-complete.mesh.vtu'), vol_f)
+            write_geo(os.path.join(self.p["f_out"], f, "mesh-complete.mesh.vtu"), vol_f)
 
         # all nodes on inlet
-        i_inlet = surf_ids['fluid_start']
+        i_inlet = surf_ids["fluid_start"]
 
         # quadratic flow profile (integrates to one, zero on the FS-interface)
-        rad = np.sqrt(points_inlet[:, 0]**2 + points_inlet[:, 1]**2) / self.p['r_inner']
+        rad = (
+            np.sqrt(points_inlet[:, 0] ** 2 + points_inlet[:, 1] ** 2)
+            / self.p["r_inner"]
+        )
 
-        profile = 'quad'
-        if profile == 'quad':
-            u_profile = 2 * (1 - rad ** 2)
-        elif profile == 'plug':
+        profile = "quad"
+        if profile == "quad":
+            u_profile = 2 * (1 - rad**2)
+        elif profile == "plug":
             u_profile = (np.abs(rad - 1) > 1e-12).astype(float)
         else:
-            raise ValueError('Unknown profile option: ' + profile)
+            raise ValueError("Unknown profile option: " + profile)
 
         # export inflow profile: GlobalNodeID, weight
-        with open(os.path.join(self.p['f_out'], 'inflow_profile.dat'), 'w') as file:
+        with open(os.path.join(self.p["f_out"], "inflow_profile.dat"), "w") as file:
             for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
-                file.write(str(i) + ' ' + str(- v))
+                file.write(str(i) + " " + str(-v))
                 if line < len(i_inlet) - 1:
-                    file.write('\n')
+                    file.write("\n")
 
         # # generate quadratic mesh
         # convert_quad = False
@@ -565,11 +692,13 @@ def generate_mesh(f_params):
     mesh.generate_points()
     mesh.generate_cells()
     mesh.extract_svFSI()
-    mesh.save_params('cylinder.json')
+    mesh.save_params("cylinder.json")
     return mesh.p
+
 
 def divisible(f, i):
     return f // i == f / i
 
-if __name__ == '__main__':
-    generate_mesh('in_geo/fsg_medium.json')
+
+if __name__ == "__main__":
+    generate_mesh("in_geo/fsg_full_medium.json")
