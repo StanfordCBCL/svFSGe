@@ -4,32 +4,37 @@
     "tortuosity": false,
     "mesh": "in_geo/fsg_coarse.json",
     "n_procs": {
-        "fluid": 10,
-        "mesh": 10,
+        "fluid": 1,
+        "mesh": 1,
         "solid": 1
     },
     "fluid": {
         "mu": 4e-06,
         "rho": 1.06e-6,
         "p0": 13.9868,
-        "q0": 3000.0
+        "q0": 1000.0,
+        "q0_rate": 2000.0
     },
     "n_max": {
         "fluid": 10,
-        "mesh": 10,
+        "mesh": 1,
         "solid": 1
     },
     "coup": {
         "nmax": 200,
         "nmin": 1,
-        "tol": 1.0e-3
+        "tol": 1.0e-3,
+        "method": "static",
+        "omega0": 0.1,
+        "iqn_ils_q": 10,
+        "iqn_ils_eps": 1.0e-12
     },
-    "nmax": 10,
+    "nmax": 10  ,
     "fmax": 1.0,
     "predict_file": false,
     "exe": {
         "fluid": "work/repos/svFSI_test/build/svFSI-build/bin/svFSI",
-        "mesh": "work/repos/svFSI_clean/build/svFSI-build/bin/svFSI",
+        "mesh": "work/repos/svFSI_test/build/svFSI-build/bin/svFSI",
         "solid": "work/repos/svFSI_fork/build/svFSI-build/bin/svFSI"
     },
     "inp": {
@@ -41,6 +46,7 @@
         "bc_flow": "steady_flow.dat",
         "bc_pressure": "steady_pressure.dat",
         "disp": "interface_displacement",
+        "inflow_vector": "inflow_vector.dat",
         "geo_fluid": "fluid.vtu",
         "geo_solid": "solid.vtu",
         "geo_mesh": "mesh.vtu",
