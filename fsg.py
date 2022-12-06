@@ -12,6 +12,7 @@ import platform
 import distro
 import glob
 from copy import deepcopy
+import argparse
 from collections import defaultdict
 
 import scipy.interpolate
@@ -52,6 +53,15 @@ class FSG(svFSI):
     def __init__(self, f_params=None):
         # svFSI simulations
         svFSI.__init__(self, f_params)
+
+    def run_post(self):
+        # todo: read in automatically
+        self.err = np.load(
+            "study_lab_meeting/fsi_res_2022-11-30_18-21-39.375658/err.npy",
+            allow_pickle=True,
+        ).item()
+        self.p["f_out"] = "."
+        self.plot_convergence()
 
     def run(self):
         # run simulation
@@ -526,14 +536,13 @@ class FSG(svFSI):
 
 
 if __name__ == "__main__":
-    # fsg = FSG('in_sim/partitioned.json')
-    # fsg.run()
+    parser = argparse.ArgumentParser(description='Run an equilibrated Fluid-Solid-Growth interaction simulation (FSGe)')
+    parser.add_argument('sim', help='simulation parameters (.json)')
+    parser.add_argument('-post', action='store_true', help='post-process only')
+    args = parser.parse_args()
 
-    fsg = FSG("study_lab_meeting/fsi_res_2022-11-30_18-21-39.375658/partitioned.json")
-    fsg.err = np.load(
-        "study_lab_meeting/fsi_res_2022-11-30_18-21-39.375658/err.npy",
-        allow_pickle=True,
-    ).item()
-    fsg.p["f_out"] = "."
-    fsg.plot_convergence()
-    # pdb.set_trace()
+    fsg = FSG(args.sim)
+    if args.post:
+        fsg.run_post()
+    else:
+        fsg.run()
