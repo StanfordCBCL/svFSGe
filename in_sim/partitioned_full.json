@@ -26,8 +26,8 @@
         "tol": 1.0e-3,
         "method": "iqn_ils",
         "omega0": 0.125,
-        "iqn_ils_q": 20,
-        "iqn_ils_eps": 1.0e-4
+        "iqn_ils_q": 10,
+        "iqn_ils_eps": 1.0e-12
     },
     "nmax": 10,
     "fmax": 1.0,

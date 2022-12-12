@@ -270,20 +270,20 @@ class FSG(svFSI):
                 self.mat_V = self.mat_V[-nq:]
                 self.mat_W = self.mat_W[-nq:]
 
-                # QR decomposition
-                qq, rr = np.linalg.qr(np.array(self.mat_V[:nq]).T)
-
-                # tolerance for redundant vectors
-                i_eps = np.where(np.abs(np.diag(rr)) < self.p["coup"]["iqn_ils_eps"])[0]
-
                 # remove linearly dependent vectors
-                # todo: do while
-                if np.any(i_eps):
-                    print("filtered " + str(len(i_eps)) + " time steps")
+                while True:
+                    # QR decomposition
+                    qq, rr = np.linalg.qr(np.array(self.mat_V[:nq]).T)
+
+                    # tolerance for redundant vectors
+                    i_eps = np.where(np.abs(np.diag(rr)) < self.p["coup"]["iqn_ils_eps"])[0]
+                    if not np.any(i_eps):
+                        break
+
+                    print("filtering " + str(len(i_eps)) + " time steps")
                     for i in reversed(i_eps):
                         self.mat_V.pop(i)
                         self.mat_W.pop(i)
-                    qq, rr = np.linalg.qr(np.array(self.mat_V[:nq]).T)
 
                 # solve for coefficients
                 bb = np.linalg.solve(rr.T, -np.dot(np.array(self.mat_V), self.res[-1]))
