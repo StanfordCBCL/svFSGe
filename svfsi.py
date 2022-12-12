@@ -82,7 +82,9 @@ class svFSI(Simulation):
                 os.makedirs(self.p[f])
 
         # generate and initialize mesh
-        self.mesh_p = generate_mesh(os.path.join(self.p["paths"]["in_geo"], self.p["mesh"]))
+        self.mesh_p = generate_mesh(
+            os.path.join(self.p["paths"]["in_geo"], self.p["mesh"])
+        )
         shutil.move("mesh_tube_fsi", os.path.join(self.p["f_out"], "mesh_tube_fsi"))
 
         # intialize meshes
@@ -91,16 +93,22 @@ class svFSI(Simulation):
 
         for d in ["fluid", "solid"]:
             fp = os.path.join(self.p["f_out"], "mesh_tube_fsi", d)
-            self.mesh[("int", d)] = read_geo(fp + "/mesh-surfaces/interface.vtp").GetOutput()
+            self.mesh[("int", d)] = read_geo(
+                fp + "/mesh-surfaces/interface.vtp"
+            ).GetOutput()
             self.mesh[("vol", d)] = read_geo(fp + "/mesh-complete.mesh.vtu").GetOutput()
 
         fp = os.path.join(self.p["f_out"], "mesh_tube_fsi/")
         self.mesh[("vol", "tube")] = read_geo(fp + self.mesh_p["fname"]).GetOutput()
-        self.mesh[("int", "inlet")] = read_geo(fp + "/fluid/mesh-surfaces/start.vtp").GetOutput()
+        self.mesh[("int", "inlet")] = read_geo(
+            fp + "/fluid/mesh-surfaces/start.vtp"
+        ).GetOutput()
 
         if self.p["tortuosity"]:
             fp = os.path.join(self.p["f_out"], "mesh_tube_fsi", d)
-            self.mesh[("int", "perturbation")] = read_geo(fp + "/mesh-surfaces/tortuosity.vtp").GetOutput()
+            self.mesh[("int", "perturbation")] = read_geo(
+                fp + "/mesh-surfaces/tortuosity.vtp"
+            ).GetOutput()
 
         # read points
         self.points = {}
@@ -181,7 +189,9 @@ class svFSI(Simulation):
 
         # write inflow profile
         i_inlet, u_profile = self.write_profile(t)
-        ids_all = v2n(self.mesh[("vol", "fluid")].GetPointData().GetArray("GlobalNodeID"))
+        ids_all = v2n(
+            self.mesh[("vol", "fluid")].GetPointData().GetArray("GlobalNodeID")
+        )
         ids = ids_all[i_inlet]
 
         # define angle (in degrees)
@@ -304,7 +314,9 @@ class svFSI(Simulation):
             num = perturb * np.ones(geo.GetNumberOfPoints())
             name = "Pressure"
             add_array(geo, num, name)
-            fn = os.path.join(self.p["f_out"], self.p["interfaces"]["load_perturbation"])
+            fn = os.path.join(
+                self.p["f_out"], self.p["interfaces"]["load_perturbation"]
+            )
             write_geo(fn, geo)
 
     def step(self, name, i, t):
@@ -320,19 +332,17 @@ class svFSI(Simulation):
             self.set_mesh(i)
 
         # execute svFSI
-        exe = "mpirun -np " + str(self.p["n_procs"][name]) + " "
-        exe += os.path.join(self.p["paths"]["exe"], self.p["exe"][name]) + " "
-        exe += os.path.join(self.p["paths"]["in_svfsi"], self.p["inp"][name])
+        exe = ["mpiexec", "-np", str(self.p["n_procs"][name])]
+        exe += [os.path.join(self.p["paths"]["exe"], self.p["exe"][name])]
+        exe += [os.path.join(self.p["paths"]["in_svfsi"], self.p["inp"][name])]
         if self.p["debug"]:
-            print(exe)
-            child = subprocess.run(shlex.split(exe), cwd=self.p["f_out"])
+            print(" ".join(exe))
+            child = subprocess.run(exe, cwd=self.p["f_out"])
         else:
             i_str = str(i).zfill(3)
             fn = os.path.join(self.p["f_sim"], name + "_" + i_str + ".log")
             with open(fn, "w") as f:
-                child = subprocess.run(
-                    shlex.split(exe), stdout=f, stderr=subprocess.DEVNULL, cwd=self.p["f_out"]
-                )
+                child = subprocess.run(exe, stdout=f, stderr=f, cwd=self.p["f_out"])
 
         # check if simulation crashed and return error
         if child.returncode != 0:

@@ -215,8 +215,10 @@ class FSG(svFSI):
             shutil.copyfile(src, trg)
 
         # save material model
-        f_code = os.path.join(self.p["paths"]["exe"], os.path.split(self.p["exe"]["solid"])[0])
-        src = (f_code + "/../../../Code/Source/svFSI/FEMbeCmm.cpp")
+        f_code = os.path.join(
+            self.p["paths"]["exe"], os.path.split(self.p["exe"]["solid"])[0]
+        )
+        src = f_code + "/../../../Code/Source/svFSI/FEMbeCmm.cpp"
         trg = os.path.join(self.p["f_arx"], "FEMbeCmm.cpp")
         shutil.copyfile(src, trg)
 
@@ -245,6 +247,7 @@ class FSG(svFSI):
         dk = deepcopy(self.prev.get(("solid", "disp", "int"))).flatten()
 
         # store increments
+        # todo: save memory by only storing necessary information
         self.dk["disp"] += [dtk]
         self.res += [dtk - dk]
 
@@ -276,7 +279,9 @@ class FSG(svFSI):
                     qq, rr = np.linalg.qr(np.array(self.mat_V[:nq]).T)
 
                     # tolerance for redundant vectors
-                    i_eps = np.where(np.abs(np.diag(rr)) < self.p["coup"]["iqn_ils_eps"])[0]
+                    i_eps = np.where(
+                        np.abs(np.diag(rr)) < self.p["coup"]["iqn_ils_eps"]
+                    )[0]
                     if not np.any(i_eps):
                         break
 
@@ -495,9 +500,11 @@ class FSG(svFSI):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Run an equilibrated Fluid-Solid-Growth interaction simulation (FSGe)')
-    parser.add_argument('sim', help='simulation parameters (.json)')
-    parser.add_argument('-post', action='store_true', help='post-process only')
+    parser = argparse.ArgumentParser(
+        description="Run an equilibrated Fluid-Solid-Growth interaction simulation (FSGe)"
+    )
+    parser.add_argument("sim", help="simulation parameters (.json)")
+    parser.add_argument("-post", action="store_true", help="post-process only")
     args = parser.parse_args()
 
     fsg = FSG(args.sim)
