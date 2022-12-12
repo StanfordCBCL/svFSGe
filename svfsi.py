@@ -3,16 +3,12 @@
 import pdb
 import vtk
 import os
-import sys
 import shutil
 import datetime
-import platform
 import scipy
 import scipy.stats
-import shlex
 import subprocess
 import numpy as np
-import distro
 from copy import deepcopy
 from collections import defaultdict
 
@@ -21,28 +17,7 @@ from vtk.util.numpy_support import numpy_to_vtk as n2v
 
 from simulation import Simulation
 from cylinder import generate_mesh
-from smooth import smooth_wss
-
-if platform.system() == "Darwin":
-    usr = "/Users/pfaller/"
-elif platform.system() == "Linux":
-    if distro.name() == "CentOS Linux":
-        usr = "/home/users/pfaller/"
-    else:
-        usr = "/home/pfaller/"
-
-# from https://github.com/StanfordCBCL/DataCuration
-sys.path.append(os.path.join(usr, "work/repos/DataCuration"))
-from vtk_functions import (
-    read_geo,
-    write_geo,
-    calculator,
-    extract_surface,
-    clean,
-    threshold,
-    get_all_arrays,
-)
-
+from vtk_functions import read_geo, write_geo
 
 # names of fields in SimVascular
 sv_names = {

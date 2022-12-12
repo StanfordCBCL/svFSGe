@@ -3,40 +3,22 @@
 import pdb
 import numpy as np
 import meshio
-import sys
 import vtk
 import os
-import json
 import shutil
-import platform
-import distro
-
-if platform.system() == "Darwin":
-    usr = "/Users/pfaller/"
-elif platform.system() == "Linux":
-    if distro.name() == "CentOS Linux":
-        usr = "/home/users/pfaller/"
-    else:
-        usr = "/home/pfaller/"
-
 from collections import defaultdict
+
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 
 from simulation import Simulation
-
-# from https://github.com/StanfordCBCL/DataCuration
-sys.path.append(os.path.join(usr, "work/repos/DataCuration"))
 from vtk_functions import (
     read_geo,
     write_geo,
-    get_points_cells,
     extract_surface,
     threshold,
     clean,
-    cut_plane,
 )
-from simulation_io import map_meshes
 
 # cell vertices in (cir, rad, axi)
 coords = [
