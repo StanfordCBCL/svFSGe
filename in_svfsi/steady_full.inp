@@ -1,12 +1,11 @@
 #----------------------------------------------------------------
 # General simulation parameters
 
-Continue previous simulation: 0
+Continue previous simulation: 1
 Number of spatial dimensions: 3
 Number of time steps: 10
+Number of new time steps: 10
 Time step size: 0.01
-
-#Simulation initialization file path: partitioned/fluid.vtu
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: steady
@@ -15,7 +14,7 @@ Start saving after time step: 1
 Save results in folder: steady
 
 Increment in saving restart files: 1
-Convert BIN to VTK format: 0
+Overwrite restart file: 0
 
 Verbose: 1
 Warning: 0
@@ -25,7 +24,7 @@ Debug: 0
 # Mesh data
 Add mesh: fluid {
 #   Mesh file path: mesh_tube_fsi/fluid/mesh-complete.mesh.vtu
-   Mesh file path: partitioned/fluid.vtu
+   Mesh file path: fluid.vtu
    Add face: f_interface {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
    }
@@ -48,16 +47,15 @@ Add equation: fluid {
 
    Density: 1.06e-6
    Viscosity: Constant {Value: 4e-6}
-   Backflow stabilization coefficient: 0.2
 
    LS type: GMRES {
-      Preconditioner: Trilinos-ILUT
+#      Preconditioner: Trilinos-ILUT
 #      Preconditioner: Trilinos-ML # slow
 #      Preconditioner: Trilinos-Diagonal # slow
-#      Preconditioner: Trilinos-ICT
+      Preconditioner: Trilinos-ICT
       Tolerance: 1e-3
       Max iterations: 200
-#      Krylov space dimension: 100
+      Krylov space dimension: 300
    }
 
    Output: Spatial {
@@ -68,13 +66,22 @@ Add equation: fluid {
    }
 
    # fluid: inflow
+#   Add BC: f_start {
+#      Type: Dir
+#      Impose flux: t
+#      Zero out perimeter: f
+#      Time dependence: Unsteady
+#      Temporal values file path: steady_flow.dat
+#      Profile: User_defined
+#      Spatial profile file path: mesh_tube_fsi/inflow_profile.dat
+#   }
+
+   # fluid: inflow vector
    Add BC: f_start {
       Type: Dir
-      Impose flux: t
-      Time dependence: Unsteady
-      Temporal values file path: steady_flow.dat
-      Profile: User_defined
-      Spatial profile file path: inflow_profile.dat
+      Zero out perimeter: f
+      Time dependence: General
+      Temporal and spatial values file path: inflow_vector.dat
    }
 
    # fluid: no slip
@@ -90,5 +97,15 @@ Add equation: fluid {
       Type: Neu
       Time dependence: Unsteady
       Temporal values file path: steady_pressure.dat
+   }
+
+   # outflow normal to outlet
+   Add BC: f_end {
+      Type: Dir
+      Time dependence: Steady
+      Value: 0.0
+      Effective direction: (1, 1, 0)
+      Impose on state variable integral: t
+      Zero out perimeter: f
    }
 }

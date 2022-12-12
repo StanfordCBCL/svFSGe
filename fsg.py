@@ -3,46 +3,18 @@
 
 import pdb
 import numpy as np
-import matplotlib.pyplot as plt
 import sys
 import shutil
 import os
-import json
-import platform
-import distro
 import glob
 from copy import deepcopy
 import argparse
-from collections import defaultdict
 
-import scipy.interpolate
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 
 from vtk.util.numpy_support import vtk_to_numpy as v2n
-from vtk.util.numpy_support import numpy_to_vtk as n2v
 
 from svfsi import svFSI, sv_names
-
-if platform.system() == "Darwin":
-    usr = "/Users/pfaller/"
-elif platform.system() == "Linux":
-    if distro.name() == "CentOS Linux":
-        usr = "/home/users/pfaller/"
-    else:
-        usr = "/home/pfaller/"
-
-# from https://github.com/StanfordCBCL/DataCuration
-sys.path.append(os.path.join(usr, "work/repos/DataCuration"))
-from vtk_functions import (
-    read_geo,
-    write_geo,
-    calculator,
-    extract_surface,
-    clean,
-    threshold,
-    get_all_arrays,
-)
 
 
 class FSG(svFSI):
@@ -71,14 +43,11 @@ class FSG(svFSI):
             print("interrupted")
             pass
 
-        # plot convergence
-        try:
-            self.plot_convergence()
-        except:
-            pass
-
-        # # archive results
+        # archive results
         self.archive()
+
+        # plot convergence
+        self.plot_convergence()
 
     def main(self):
         # print reynolds number
@@ -131,22 +100,19 @@ class FSG(svFSI):
                 print(out)
 
                 # archive solution
-                self.curr.archive(
-                    "tube",
-                    os.path.join(self.p["root"], "tube_" + str(i).zfill(3) + ".vtu"),
-                )
+                dst = os.path.join(self.p["f_sim"], "tube_" + str(i).zfill(3) + ".vtu")
+                self.curr.archive("tube", dst)
 
                 # check if coupling converged
                 if status:
                     # save converged steps
                     i_conv = str(i).zfill(3)
                     t_conv = str(t).zfill(3)
-                    for src in glob.glob(
-                        os.path.join(self.p["root"], "*_" + i_conv + ".*")
-                    ):
-                        trg = src.replace(i_conv, t_conv).replace(
-                            self.p["root"], self.p["root"] + "/converged"
-                        )
+
+                    srcs = os.path.join(self.p["f_sim"], "*_" + i_conv + ".*")
+                    for src in glob.glob(srcs):
+                        trg = os.path.basename(src).replace(i_conv, t_conv)
+                        trg = os.path.join(self.p["f_conv"], trg)
                         shutil.copyfile(src, trg)
 
                     # archive
@@ -192,7 +158,7 @@ class FSG(svFSI):
 
                 # plot omega
                 if self.p["coup"]["method"] in ["static", "aitken"]:
-                    ax2.plot(x, self.p["coup"]["omega"][name][i], color=col_omg)
+                    ax2.plot(x, self.p["coup"]["omega"][name][j], color=col_omg)
 
             # plot convergence criterion
             axi.plot([0, n_iter[-1]], self.p["coup"]["tol"] * np.ones(2), "k--")
@@ -232,33 +198,26 @@ class FSG(svFSI):
         plt.close(fig)
 
     def archive(self):
-        # move results
-        shutil.move(self.p["root"], os.path.join(self.p["f_out"], self.p["root"]))
-        shutil.move("mesh_tube_fsi", os.path.join(self.p["f_out"], "mesh_tube_fsi"))
-
-        # # save stored results
+        # save stored results
         np.save(os.path.join(self.p["f_out"], "err.npy"), self.err)
 
         # save parameters
-        self.save_params(self.p["root"] + ".json")
+        self.save_params(self.p["name"] + ".json")
 
         # save input files
         for src in self.p["inp"].values():
-            trg = os.path.join(self.p["f_out"], self.p["root"], os.path.basename(src))
-            shutil.copyfile(src, trg)
+            trg = os.path.join(self.p["f_arx"], os.path.basename(src))
+            shutil.copyfile(os.path.join(self.p["paths"]["in_svfsi"], src), trg)
 
         # save python scripts
         for src in ["fsg.py", "svfsi.py"]:
-            trg = os.path.join(self.p["f_out"], self.p["root"], os.path.basename(src))
+            trg = os.path.join(self.p["f_arx"], os.path.basename(src))
             shutil.copyfile(src, trg)
 
         # save material model
-        src = (
-            usr
-            + os.path.split(self.p["exe"]["solid"])[0]
-            + "/../../../Code/Source/svFSI/FEMbeCmm.cpp"
-        )
-        trg = os.path.join(self.p["f_out"], self.p["root"], "FEMbeCmm.cpp")
+        f_code = os.path.join(self.p["paths"]["exe"], os.path.split(self.p["exe"]["solid"])[0])
+        src = (f_code + "/../../../Code/Source/svFSI/FEMbeCmm.cpp")
+        trg = os.path.join(self.p["f_arx"], "FEMbeCmm.cpp")
         shutil.copyfile(src, trg)
 
     def coup_step_iqn_ils(self, i, t, n):

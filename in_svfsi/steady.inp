@@ -7,8 +7,6 @@ Number of time steps: 10
 Number of new time steps: 10
 Time step size: 0.01
 
-#Simulation initialization file path: partitioned/fluid.vtu
-
 Save results to VTK format: 1
 Name prefix of saved VTK files: steady
 Increment in saving VTK files: 1
@@ -26,7 +24,7 @@ Debug: 0
 # Mesh data
 Add mesh: fluid {
 #   Mesh file path: mesh_tube_fsi/fluid/mesh-complete.mesh.vtu
-   Mesh file path: partitioned/fluid.vtu
+   Mesh file path: fluid.vtu
    Add face: f_interface {
       Face file path: mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp
    }
@@ -61,7 +59,7 @@ Add equation: fluid {
 #      Preconditioner: Trilinos-ML # slow
 #      Preconditioner: Trilinos-Diagonal # slow
       Preconditioner: Trilinos-ICT
-      Tolerance: 1e-6
+      Tolerance: 1e-3
       Max iterations: 200
       Krylov space dimension: 300
    }

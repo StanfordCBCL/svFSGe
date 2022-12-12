@@ -2,7 +2,7 @@
     "fsi": true,
     "debug": false,
     "tortuosity": false,
-    "mesh": "in_geo/fsg_full_coarse.json",
+    "mesh": "fsg_full_coarse.json",
     "n_procs": {
         "fluid": 10,
         "mesh": 10,
@@ -24,7 +24,7 @@
         "nmax": 200,
         "nmin": 1,
         "tol": 1.0e-3,
-        "method": "static",
+        "method": "iqn_ils",
         "omega0": 0.125,
         "iqn_ils_q": 20,
         "iqn_ils_eps": 1.0e-4
@@ -33,19 +33,19 @@
     "fmax": 1.0,
     "predict_file": false,
     "exe": {
-        "fluid": "work/repos/svFSI_test/build/svFSI-build/bin/svFSI",
-        "mesh": "work/repos/svFSI_test/build/svFSI-build/bin/svFSI",
-        "solid": "work/repos/svFSI_fork/build/svFSI-build/bin/svFSI"
+        "fluid": "svFSI_fork/build/svFSI-build/bin/svFSI",
+        "mesh": "svFSI_fork/build/svFSI-build/bin/svFSI",
+        "solid": "svFSI_fork/build/svFSI-build/bin/svFSI"
     },
     "inp": {
-        "fluid": "in_svfsi/steady_full.inp",
-        "mesh": "in_svfsi/mesh_full.inp",
-        "solid": "in_svfsi/gr_full_restart.inp"
+        "fluid": "steady_full.inp",
+        "mesh": "mesh_full.inp",
+        "solid": "gr_full_restart.inp"
     },
     "interfaces": {
         "bc_flow": "steady_flow.dat",
         "bc_pressure": "steady_pressure.dat",
-        "disp": "interface_displacement",
+        "disp": "interface_displacement.dat",
         "inflow_vector": "inflow_vector.dat",
         "geo_fluid": "fluid.vtu",
         "geo_solid": "solid.vtu",
@@ -58,5 +58,10 @@
         "mesh": "mesh",
         "solid": "gr_restart"
     },
-    "root": "partitioned"
+    "name": "partitioned",
+    "paths": {
+        "in_geo": "/home/pfaller/work/repos/FSG/in_geo",
+        "in_svfsi": "/home/pfaller/work/repos/FSG/in_svfsi",
+        "exe": "/home/pfaller/work/repos"
+    }
 }
