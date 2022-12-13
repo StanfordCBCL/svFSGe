@@ -6,6 +6,7 @@ import meshio
 import vtk
 import os
 import shutil
+import argparse
 from collections import defaultdict
 
 from vtk.util.numpy_support import numpy_to_vtk as n2v
@@ -155,6 +156,8 @@ class Mesh(Simulation):
         assert (
             self.p["n_rad_tran"] - self.p["boundary"]["n"] >= 1
         ), "boundary layer too large"
+        if self.p["boundary"]["thickness"] > 0.0:
+            assert self.p["boundary"]["n"] > 0, "define at least one boundary layer"
 
     def get_surfaces_cyl(self, pid, ia, ir, ic):
         # store surfaces
@@ -216,12 +219,10 @@ class Mesh(Simulation):
         pid = 0
 
         # generate quadratic mesh
-        rad = self.p["r_inner"] / (self.p["n_rad_f"] - 1)
-        if "boundary" in self.p:
-            rad = (self.p["r_inner"] - self.p["boundary"]["thickness"]) / (
-                self.p["n_rad_f"] - 1 - self.p["boundary"]["n"]
-            )
-        delta = (self.p["n_quad"] - 1) * self.p["r_inner"] / (self.p["n_rad_f"] - 1)
+        ri = self.p["r_inner"] - self.p["boundary"]["thickness"]
+        nr = self.p["n_rad_f"] - 1 - self.p["boundary"]["n"]
+        rad = ri / nr
+        delta = (self.p["n_quad"] - 1) * ri / nr
 
         # offset from center
         if self.p["n_seg"] == 1:
@@ -635,11 +636,12 @@ class Mesh(Simulation):
             raise ValueError("Unknown profile option: " + profile)
 
         # export inflow profile: GlobalNodeID, weight
-        with open(os.path.join(self.p["f_out"], "inflow_profile.dat"), "w") as file:
-            for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
-                file.write(str(i) + " " + str(-v))
-                if line < len(i_inlet) - 1:
-                    file.write("\n")
+        if False:
+            with open(os.path.join(self.p["f_out"], "inflow_profile.dat"), "w") as file:
+                for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
+                    file.write(str(i) + " " + str(-v))
+                    if line < len(i_inlet) - 1:
+                        file.write("\n")
 
         # # generate quadratic mesh
         # convert_quad = False
@@ -683,4 +685,7 @@ def divisible(f, i):
 
 
 if __name__ == "__main__":
-    generate_mesh("in_geo/fsg_full_medium.json")
+    parser = argparse.ArgumentParser(description="Generate FSI mesh")
+    parser.add_argument("geo", help="geometry parameters (.json)")
+    args = parser.parse_args()
+    generate_mesh(args.geo)
