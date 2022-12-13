@@ -3,14 +3,15 @@
 
 import pdb
 import numpy as np
-import sys
 import shutil
 import os
 import glob
+import time
 from copy import deepcopy
 import argparse
 
 import matplotlib.pyplot as plt
+from profilehooks import profile
 
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 
@@ -49,6 +50,7 @@ class FSG(svFSI):
         # plot convergence
         self.plot_convergence()
 
+    @profile
     def main(self):
         # print reynolds number
         print("Re = " + str(int(self.p["re"])))
@@ -76,10 +78,11 @@ class FSG(svFSI):
                 i += 1
 
                 # perform coupling step
+                times = {}
                 if self.p["coup"]["method"] in ["static", "aitken"]:
-                    status = self.coup_step_relax(i, t, n)
+                    status = self.coup_step_relax(i, t, n, times)
                 elif self.p["coup"]["method"] == "iqn_ils":
-                    status = self.coup_step_iqn_ils(i, t, n)
+                    status = self.coup_step_iqn_ils(i, t, n, times)
                 else:
                     raise ValueError(
                         "Unknown coupling method " + self.p["coup"]["method"]
@@ -94,9 +97,12 @@ class FSG(svFSI):
                 # screen output
                 out = "i " + str(i) + " \tn " + str(n) + "\t"
                 for name, e in self.err.items():
-                    out += "  " + name + " " + "{:.2e}".format(e[-1][-1])
-                for name, e in self.p["coup"]["omega"].items():
-                    out += "  " + name + " " + "{:.2e}".format(e[-1][-1])
+                    out += "{:.2e}".format(e[-1][-1]) + "\t"
+                if self.p["coup"]["method"] in ["static", "aitken"]:
+                    for name, e in self.p["coup"]["omega"].items():
+                        out += "{:.2e}".format(e[-1][-1]) + "\t"
+                for f in self.fields:
+                    out += "{:.2e}".format(times[f]) + "\t"
                 print(out)
 
                 # archive solution
@@ -223,24 +229,26 @@ class FSG(svFSI):
         trg = os.path.join(self.p["f_arx"], "FEMbeCmm.cpp")
         shutil.copyfile(src, trg)
 
-    def coup_step_iqn_ils(self, i, t, n):
+    def coup_step_iqn_ils(self, i, t, n, times):
         # step 0: mesh movement (not in first first iteration)
         if self.p["fsi"] and i > 1:
-            if self.step("mesh", i, t):
+            if self.step("mesh", i, t, times):
                 return False
+        else:
+            times["mesh"] = 0.0
 
         # store previous solutions
         self.prev = self.curr.copy()
 
         # step 1: fluid update
         if self.p["fsi"]:
-            if self.step("fluid", i, t):
+            if self.step("fluid", i, t, times):
                 return False
         else:
             self.poiseuille(t)
 
         # step 2: solid update
-        if self.step("solid", i, t):
+        if self.step("solid", i, t, times):
             return False
 
         # log interface solution
@@ -301,10 +309,10 @@ class FSG(svFSI):
         else:
             return True
 
-    def coup_step_relax(self, i, t, n):
+    def coup_step_relax(self, i, t, n, times):
         # step 0: mesh movement (not in very first iteration)
         if self.p["fsi"] and i > 1:
-            if self.step("mesh", i, t):
+            if self.step("mesh", i, t, times):
                 return False
 
         # store previous solutions
@@ -312,13 +320,13 @@ class FSG(svFSI):
 
         # step 1: fluid update
         if self.p["fsi"]:
-            if self.step("fluid", i, t):
+            if self.step("fluid", i, t, times):
                 return False
         else:
             self.poiseuille(t)
 
         # step 2: solid update
-        if self.step("solid", i, t):
+        if self.step("solid", i, t, times):
             return False
 
         # log interface solution for aitken relaxation

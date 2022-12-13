@@ -3,6 +3,7 @@
 import pdb
 import vtk
 import os
+import time
 import shutil
 import datetime
 import scipy
@@ -295,7 +296,7 @@ class svFSI(Simulation):
             )
             write_geo(fn, geo)
 
-    def step(self, name, i, t):
+    def step(self, name, i, t, times):
         if name not in self.fields:
             raise ValueError("Unknown step option " + name)
 
@@ -311,6 +312,8 @@ class svFSI(Simulation):
         exe = ["mpiexec", "-np", str(self.p["n_procs"][name])]
         exe += [join(self.p["paths"]["exe"], self.p["exe"][name])]
         exe += [join(self.p["paths"]["in_svfsi"], self.p["inp"][name])]
+
+        t_start = time.time()
         if self.p["debug"]:
             print(" ".join(exe))
             child = subprocess.run(exe, cwd=self.p["f_out"])
@@ -319,6 +322,7 @@ class svFSI(Simulation):
             fn = join(self.p["f_sim"], name + "_" + i_str + ".log")
             with open(fn, "w") as f:
                 child = subprocess.run(exe, stdout=f, stderr=f, cwd=self.p["f_out"])
+        times[name] = time.time() - t_start
 
         # check if simulation crashed and return error
         if child.returncode != 0:
@@ -456,11 +460,12 @@ class svFSI(Simulation):
         u_profile = 1.0 / area * self.get_profile(x_norm, rad_norm, t)
 
         # export inflow profile: GlobalNodeID, weight
-        with open("inflow_profile.dat", "w") as file:
-            for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
-                file.write(str(i + 1) + " " + str(-v))
-                if line < len(i_inlet) - 1:
-                    file.write("\n")
+        if False:
+            with open("inflow_profile.dat", "w") as file:
+                for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
+                    file.write(str(i + 1) + " " + str(-v))
+                    if line < len(i_inlet) - 1:
+                        file.write("\n")
 
         return i_inlet, u_profile
 
