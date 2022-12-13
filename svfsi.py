@@ -11,6 +11,7 @@ import subprocess
 import numpy as np
 from copy import deepcopy
 from collections import defaultdict
+from os.path import join
 
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 from vtk.util.numpy_support import numpy_to_vtk as n2v
@@ -46,10 +47,10 @@ class svFSI(Simulation):
         ct = str(datetime.datetime.now()).replace(" ", "_").replace(":", "-")
 
         # output folder name
-        self.p["f_out"] = self.p["name"] + "_" + ct
-        self.p["f_sim"] = os.path.join(self.p["f_out"], "partitioned")
-        self.p["f_conv"] = os.path.join(self.p["f_sim"], "converged")
-        self.p["f_arx"] = os.path.join(self.p["f_out"], "archive")
+        self.p["f_out"] = join(self.p["paths"]["root"], self.p["name"] + "_" + ct)
+        self.p["f_sim"] = join(self.p["f_out"], "partitioned")
+        self.p["f_conv"] = join(self.p["f_sim"], "converged")
+        self.p["f_arx"] = join(self.p["f_out"], "archive")
 
         # make folders
         for f in self.p:
@@ -58,29 +59,29 @@ class svFSI(Simulation):
 
         # generate and initialize mesh
         self.mesh_p = generate_mesh(
-            os.path.join(self.p["paths"]["in_geo"], self.p["mesh"])
+            join(self.p["paths"]["in_geo"], self.p["mesh"])
         )
-        shutil.move("mesh_tube_fsi", os.path.join(self.p["f_out"], "mesh_tube_fsi"))
+        shutil.move("mesh_tube_fsi", join(self.p["f_out"], "mesh_tube_fsi"))
 
         # intialize meshes
         self.fields = ["fluid", "solid", "mesh"]
         self.mesh = {}
 
         for d in ["fluid", "solid"]:
-            fp = os.path.join(self.p["f_out"], "mesh_tube_fsi", d)
+            fp = join(self.p["f_out"], "mesh_tube_fsi", d)
             self.mesh[("int", d)] = read_geo(
                 fp + "/mesh-surfaces/interface.vtp"
             ).GetOutput()
             self.mesh[("vol", d)] = read_geo(fp + "/mesh-complete.mesh.vtu").GetOutput()
 
-        fp = os.path.join(self.p["f_out"], "mesh_tube_fsi/")
+        fp = join(self.p["f_out"], "mesh_tube_fsi/")
         self.mesh[("vol", "tube")] = read_geo(fp + self.mesh_p["fname"]).GetOutput()
         self.mesh[("int", "inlet")] = read_geo(
             fp + "/fluid/mesh-surfaces/start.vtp"
         ).GetOutput()
 
         if self.p["tortuosity"]:
-            fp = os.path.join(self.p["f_out"], "mesh_tube_fsi", d)
+            fp = join(self.p["f_out"], "mesh_tube_fsi", d)
             self.mesh[("int", "perturbation")] = read_geo(
                 fp + "/mesh-surfaces/tortuosity.vtp"
             ).GetOutput()
@@ -156,7 +157,7 @@ class svFSI(Simulation):
 
         # set bc pressure and flow
         for bc, val in zip(["pressure", "flow"], [p, -q]):
-            fn = os.path.join(self.p["f_out"], self.p["interfaces"]["bc_" + bc])
+            fn = join(self.p["f_out"], self.p["interfaces"]["bc_" + bc])
             with open(fn, "w") as f:
                 f.write("2 1\n")
                 f.write("0.0 " + str(val) + "\n")
@@ -177,7 +178,7 @@ class svFSI(Simulation):
 
         # set bc flow vector
         direct = [0, np.sin(alpha), np.cos(alpha)]
-        fn = os.path.join(self.p["f_out"], self.p["interfaces"]["inflow_vector"])
+        fn = join(self.p["f_out"], self.p["interfaces"]["inflow_vector"])
         with open(fn, "w") as f:
             # don't add time zero twice
             f.write("3 2 " + str(len(ids)) + "\n")
@@ -206,7 +207,7 @@ class svFSI(Simulation):
 
         # write geometry to file
         write_geo(
-            os.path.join(self.p["f_out"], self.p["interfaces"]["geo_fluid"]),
+            join(self.p["f_out"], self.p["interfaces"]["geo_fluid"]),
             warp.GetOutput(),
         )
 
@@ -217,7 +218,7 @@ class svFSI(Simulation):
         msh = self.mesh[("int", "fluid")]
         points = v2n(msh.GetPointData().GetArray("GlobalNodeID"))
 
-        fn = os.path.join(self.p["f_out"], self.p["interfaces"]["disp"])
+        fn = join(self.p["f_out"], self.p["interfaces"]["disp"])
         with open(fn, "w") as f:
             # don't add time zero twice
             if i > 2:
@@ -252,7 +253,7 @@ class svFSI(Simulation):
         add_array(mesh, disp, sv_names["disp"])
 
         # write geometry to file
-        write_geo(os.path.join(self.p["f_out"], self.p["interfaces"]["geo_mesh"]), mesh)
+        write_geo(join(self.p["f_out"], self.p["interfaces"]["geo_mesh"]), mesh)
 
     def set_solid(self, t):
         # name of wall properties array
@@ -268,7 +269,7 @@ class svFSI(Simulation):
         add_array(solid, props, n)
 
         # write geometry to file
-        fn = os.path.join(self.p["f_out"], self.p["interfaces"]["geo_solid"])
+        fn = join(self.p["f_out"], self.p["interfaces"]["geo_solid"])
         write_geo(fn, solid)
 
         # write interface pressure to file
@@ -276,7 +277,7 @@ class svFSI(Simulation):
         num = self.curr.get(("solid", "press", "int"))
         name = "Pressure"
         add_array(geo, num, name)
-        fn = os.path.join(self.p["f_out"], self.p["interfaces"]["load_pressure"])
+        fn = join(self.p["f_out"], self.p["interfaces"]["load_pressure"])
         write_geo(fn, geo)
 
         # write interface pressure perturbation to file
@@ -289,7 +290,7 @@ class svFSI(Simulation):
             num = perturb * np.ones(geo.GetNumberOfPoints())
             name = "Pressure"
             add_array(geo, num, name)
-            fn = os.path.join(
+            fn = join(
                 self.p["f_out"], self.p["interfaces"]["load_perturbation"]
             )
             write_geo(fn, geo)
@@ -308,14 +309,14 @@ class svFSI(Simulation):
 
         # execute svFSI
         exe = ["mpiexec", "-np", str(self.p["n_procs"][name])]
-        exe += [os.path.join(self.p["paths"]["exe"], self.p["exe"][name])]
-        exe += [os.path.join(self.p["paths"]["in_svfsi"], self.p["inp"][name])]
+        exe += [join(self.p["paths"]["exe"], self.p["exe"][name])]
+        exe += [join(self.p["paths"]["in_svfsi"], self.p["inp"][name])]
         if self.p["debug"]:
             print(" ".join(exe))
             child = subprocess.run(exe, cwd=self.p["f_out"])
         else:
             i_str = str(i).zfill(3)
-            fn = os.path.join(self.p["f_sim"], name + "_" + i_str + ".log")
+            fn = join(self.p["f_sim"], name + "_" + i_str + ".log")
             with open(fn, "w") as f:
                 child = subprocess.run(exe, stdout=f, stderr=f, cwd=self.p["f_out"])
 
@@ -330,7 +331,7 @@ class svFSI(Simulation):
 
     def post(self, domain, i):
         out = self.p["out"][domain]
-        fname = os.path.join(out, out + "_")
+        fname = join(out, out + "_")
         phys = domain
         i_str = str(i).zfill(3)
         if domain == "solid":
@@ -354,7 +355,7 @@ class svFSI(Simulation):
             src = [fname + str(self.p["n_max"][domain] * (i - 1)).zfill(3) + ".vtu"]
         else:
             raise ValueError("Unknown domain " + domain)
-        src = [os.path.join(self.p["f_out"], s) for s in src]
+        src = [join(self.p["f_out"], s) for s in src]
 
         # check if simulation crashed
         if np.any([not os.path.exists(s) for s in src]):
@@ -363,7 +364,7 @@ class svFSI(Simulation):
                 return True
         else:
             # archive results
-            trg = os.path.join(self.p["f_sim"], domain + "_out_" + i_str + ".vtu")
+            trg = join(self.p["f_sim"], domain + "_out_" + i_str + ".vtu")
             shutil.copyfile(src[0], trg)
 
             # read results
@@ -405,8 +406,8 @@ class svFSI(Simulation):
 
         # archive input
         if domain in ["fluid", "solid"]:
-            src = os.path.join(self.p["f_out"], self.p["interfaces"]["geo_" + domain])
-            trg = os.path.join(self.p["f_sim"], domain + "_inp_" + i_str + ".vtu")
+            src = join(self.p["f_out"], self.p["interfaces"]["geo_" + domain])
+            trg = join(self.p["f_sim"], domain + "_inp_" + i_str + ".vtu")
             shutil.copyfile(src, trg)
         return False
 

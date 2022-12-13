@@ -210,9 +210,10 @@ class FSG(svFSI):
             shutil.copyfile(os.path.join(self.p["paths"]["in_svfsi"], src), trg)
 
         # save python scripts
+        sp = os.path.dirname(os.path.realpath(__file__))
         for src in ["fsg.py", "svfsi.py"]:
             trg = os.path.join(self.p["f_arx"], os.path.basename(src))
-            shutil.copyfile(src, trg)
+            shutil.copyfile(os.path.join(sp, src), trg)
 
         # save material model
         f_code = os.path.join(
