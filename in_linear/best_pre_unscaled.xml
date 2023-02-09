@@ -1,0 +1,33 @@
+<ParameterList name="MultiLevelPreconditioner">
+<Parameter name="ML output" type="int" value="0"/>
+<!--General-->
+<Parameter name="max levels" type="int" value="10"/>
+<Parameter name="prec type" type="string" value="MGV"/>
+<Parameter name="increasing or decreasing" type="string" value="increasing"/>
+<!--Grid Transfer-->
+<Parameter name="aggregation: type" type="string" value="Uncoupled-MIS"/>
+<Parameter name="energy minimization: enable" type="bool" value="true"/>
+<Parameter name="eigen-analysis: type" type="string" value="cg"/>
+<Parameter name="eigen-analysis: iterations" type="int" value="20"/>
+<!--Smoothing-->
+<Parameter name="smoother: sweeps" type="int" value="16"/>
+<Parameter name="smoother: damping factor" type="double" value="0.67"/>
+<Parameter name="smoother: pre or post" type="string" value="post"/>
+<Parameter name="smoother: type" type="string" value="Chebyshev"/>
+<Parameter name="smoother: Chebyshev alpha" type="double" value="200"/>
+<!--Coarse Solution-->
+<Parameter name="coarse: type" type="string" value="Amesos-KLU"/>
+<Parameter name="coarse: max size" type="int" value="256"/>
+</ParameterList>
+
+
+
+<!--<Parameter name="ML output" type="int" value="10"/>-->
+<!--<Parameter name="max levels" type="int" value="2"/>-->
+<!--<Parameter name="prec type" type="string" value="MGV"/>-->
+<!--<Parameter name="coarse: type" type="string" value="Amesos-KLU"/>-->
+<!--<Parameter name="eigen-analysis: type" type="string" value="Anorm"/>-->
+<!--&lt;!&ndash;<Parameter name="aggregation: damping factor" type="double" value="1.0e3"/>&ndash;&gt;-->
+<!--<Parameter name="energy minimization: enable" type="bool" value="true"/>-->
+<!--&lt;!&ndash;unsmoothed&ndash;&gt;-->
+<!--<Parameter name="smoother: damping factor" type="double" value="0.0"/>-->

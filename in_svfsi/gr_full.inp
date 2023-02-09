@@ -1,10 +1,10 @@
 # General simulation parameters
 
-Continue previous simulation: 0
+Continue previous simulation: 1
 Number of spatial dimensions: 3
-Number of time steps: 11
-Time step size: 1.0
-Spectral radius of infinite time step: 0.0
+Number of time steps: 120
+Time step size: 0.001
+Spectral radius of infinite time step: 0.5
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: gr
@@ -47,14 +47,15 @@ Add mesh: msh {
 # Equations
 Add equation: struct {
    Coupled: 1
-   Min iterations: 1
-   Max iterations: 30
-   Tolerance: 1e-11
+   Min iterations: 2
+   Max iterations: 200
+   Tolerance: 1e-10
 
    Constitutive model: GR_Equilibrated
    Elasticity modulus: 1.0e-16
    Poisson ratio: 0.0
-   Density: 0.0
+   Density: 1.0e-5
+   Mass damping: 1.0e-2
 
    Output: Spatial {
       Displacement: t
@@ -72,8 +73,8 @@ Add equation: struct {
    {
       Tolerance:           1e-6
       Max iterations:      2
-      Krylov space dimension: 1000
-      Preconditioner:  Trilinos-Direct
+      Krylov space dimension: 600
+      Preconditioner:  Trilinos-ML
    }
 
    # plane strain
