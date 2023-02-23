@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import math
 import pdb
 import numpy as np
 import meshio
@@ -217,26 +217,75 @@ class Mesh(Simulation):
 
     def generate_points(self):
         pid = 0
+        h = self.p["height"]
+        l1 = self.p["L1"]
+        l2 = self.p["L2"]
+        l3 = self.p["L3"]
+        l4 = self.p["L4"]
+        l5 = self.p["L5"]
+        l6 = self.p["L6"]
+        l7 = self.p["L7"]
+        wl = self.p["w_left"]
+        wr = self.p["w_right"]
+        pi = math.pi
 
-        # generate quadratic mesh
-        ri = self.p["r_inner"] - self.p["boundary"]["thickness"]
-        nr = self.p["n_rad_f"] - 1 - self.p["boundary"]["n"]
-        rad = ri / nr
-        delta = (self.p["n_quad"] - 1) * ri / nr
-
-        # offset from center
-        if self.p["n_seg"] == 1:
-            x0 = -delta
-            y0 = -delta
-            rad *= 2.0
-        elif self.p["n_seg"] == 4:
-            x0 = 0.0
-            y0 = 0.0
-        else:
-            raise ValueError("not implemented for n_seg=" + str(self.p["n_seg"]))
+        r1 = self.p["r1"]
+        r4 = self.p["r4"]
+        r7 = self.p["r7"]
+        r_inner = 1.0
 
         for ia in range(self.p["n_axi"] + 1):
             axi = self.p["height"] * self.f["axi"](ia / self.p["n_axi"])
+            axi_shifted = axi - h / 2
+
+            # ***
+            if axi_shifted < -h / 2 + l1:
+                r_inner = r1
+
+            elif axi_shifted < -h / 2 + l1 + l2:
+                r_inner = 0.5 * (r1 - 0.5 * wl) * math.sin(
+                    (pi * -(axi_shifted + (0.5 * l2 + l3 + 0.5 * l4))) / l2) + 0.5 * (r1 + 0.5 * wl)
+
+            elif axi_shifted < -h / 2 + l1 + l2 + l3:
+                r_inner = 0.5 * (r4 - 0.5 * wl) * math.sin((pi * (axi_shifted + (0.5*(l3 + l4)))) / l3) + 0.5 * (
+                        r4 + 0.5 * wl)
+
+            elif axi_shifted < -h / 2 + l1 + l2 + l3 + l4:
+                r_inner = r4
+
+            elif axi_shifted < -h / 2 + l1 + l2 + l3 + l4 + l5:
+                r_inner = 0.5 * (r4 - 0.5 * wr) * math.sin((pi * -(axi_shifted - 0.5 * (l4 + l5))) / l5) + 0.5 * (
+                        r4 + 0.5 * wr)
+
+            elif axi_shifted < -h / 2 + l1 + l2 + l3 + l4 + l5 + l6:
+                r_inner = 0.5 * (r7 - 0.5 * wr) * math.sin(
+                            (pi * (axi_shifted - (0.5*l4 + l5 + 0.5*l6))) / l6) + 0.5 * (
+                                      r7 + 0.5 * wr)
+
+            elif axi_shifted <= -h / 2 + l1 + l2 + l3 + l4 + l5 + l6 + l7:
+                r_inner = r7
+
+            else:
+                r_inner = 1.0
+            # ***
+
+            # generate quadratic mesh
+            ri = r_inner - self.p["boundary"]["thickness"]
+            nr = self.p["n_rad_f"] - 1 - self.p["boundary"]["n"]
+            rad = ri / nr
+            delta = (self.p["n_quad"] - 1) * ri / nr
+
+            # offset from center
+            if self.p["n_seg"] == 1:
+                x0 = -delta
+                y0 = -delta
+                rad *= 2.0
+            elif self.p["n_seg"] == 4:
+                x0 = 0.0
+                y0 = 0.0
+            else:
+                raise ValueError("not implemented for n_seg=" + str(self.p["n_seg"]))
+
             for iy in range(self.p["n_quad"]):
                 for ix in range(self.p["n_quad"]):
                     self.points[pid] = [x0 + ix * rad, y0 + iy * rad, axi]
@@ -245,6 +294,40 @@ class Mesh(Simulation):
 
         # generate transition mesh
         for ia in range(self.p["n_axi"] + 1):
+            axi = self.p["height"] * self.f["axi"](ia / self.p["n_axi"])
+            axi_shifted = axi - h / 2
+
+            # ***
+            if axi_shifted < -h / 2 + l1:
+                r_inner = r1
+
+            elif axi_shifted < -h / 2 + l1 + l2:
+                r_inner = 0.5 * (r1 - 0.5 * wl) * math.sin(
+                    (pi * -(axi_shifted + (0.5 * l2 + l3 + 0.5 * l4))) / l2) + 0.5 * (r1 + 0.5 * wl)
+
+            elif axi_shifted < -h / 2 + l1 + l2 + l3:
+                r_inner = 0.5 * (r4 - 0.5 * wl) * math.sin((pi * (axi_shifted + (0.5*(l3 + l4)))) / l3) + 0.5 * (
+                        r4 + 0.5 * wl)
+
+            elif axi_shifted < -h / 2 + l1 + l2 + l3 + l4:
+                r_inner = r4
+
+            elif axi_shifted < -h / 2 + l1 + l2 + l3 + l4 + l5:
+                r_inner = 0.5 * (r4 - 0.5 * wr) * math.sin((pi * -(axi_shifted - 0.5 * (l4 + l5))) / l5) + 0.5 * (
+                        r4 + 0.5 * wr)
+
+            elif axi_shifted < -h / 2 + l1 + l2 + l3 + l4 + l5 + l6:
+                r_inner = 0.5 * (r7 - 0.5 * wr) * math.sin(
+                            (pi * (axi_shifted - (0.5*l4 + l5 + 0.5*l6))) / l6) + 0.5 * (
+                                      r7 + 0.5 * wr)
+
+            elif axi_shifted <= -h / 2 + l1 + l2 + l3 + l4 + l5 + l6 + l7:
+                r_inner = r7
+
+            else:
+                r_inner = 1.0
+            # ***
+
             for ir in range(self.p["n_rad_tran"] - 1):
                 for ic in range(self.p["n_point_cir"]):
                     # boundary index in case of boundary layer
@@ -252,7 +335,7 @@ class Mesh(Simulation):
 
                     # transition between two radii
                     i_rad = (ir + 1) / (self.p["n_rad_tran"] - self.p["boundary"]["n"])
-                    rad_1 = self.p["r_inner"] - self.p["boundary"]["thickness"]
+                    rad_1 = r_inner - self.p["boundary"]["thickness"]
                     rad_0 = (
                         rad_1
                         * (self.p["n_quad"] - 1)
@@ -260,7 +343,6 @@ class Mesh(Simulation):
                     )
 
                     # cylindrical coordinate system
-                    axi = self.p["height"] * self.f["axi"](ia / self.p["n_axi"])
                     cir = 2 * np.pi * ic / self.p["n_cell_cir"] / self.p["n_seg"]
                     rad = rad_0 + (rad_1 - rad_0) * i_rad
 
@@ -293,7 +375,7 @@ class Mesh(Simulation):
                     if ib >= 0:
                         ib_ratio = 1.0 - ib / (self.p["boundary"]["n"])
                         rad_mod = (
-                            self.p["r_inner"]
+                            r_inner
                             - ib_ratio * self.p["boundary"]["thickness"]
                         )
                     self.points[pid] = [
@@ -306,18 +388,19 @@ class Mesh(Simulation):
                     pid += 1
 
             # generate circular g&r mesh
+            r_outer = r_inner
             for ir in range(self.p["n_rad_gr"] + 1):
                 for ic in range(self.p["n_point_cir"]):
                     # cylindrical coordinate system
-                    axi = self.p["height"] * self.f["axi"](ia / self.p["n_axi"])
                     cir = 2 * np.pi * ic / self.p["n_cell_cir"] / self.p["n_seg"]
                     rad = (
-                        self.p["r_inner"]
-                        + (self.p["r_outer"] - self.p["r_inner"])
+                        r_inner
+                        + (r_outer - r_inner)
                         * (ir)
                         / self.p["n_rad_gr"]
                     )
 
+                    # NOTE: can change axi here and around line 254 to shift coordinate system along z-axis
                     self.points[pid] = [rad * np.cos(cir), rad * np.sin(cir), axi]
 
                     # store (normalized) coordinates
@@ -332,7 +415,7 @@ class Mesh(Simulation):
                         * 0.04
                         * 0.1
                         / np.pi
-                        / self.p["r_inner"] ** 3
+                        / r_inner ** 3
                     )
                     # time
                     self.cosy[pid, 7] = 0.0
