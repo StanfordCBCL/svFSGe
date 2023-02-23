@@ -265,27 +265,32 @@ class Mesh(Simulation):
                     rad = rad_0 + (rad_1 - rad_0) * i_rad
 
                     # transition from quad mesh to circular mesh
-                    i_trans = (ir + 1) / (
-                        self.p["n_rad_tran"] - self.p["boundary"]["n"]
-                    )
+                    i_trans = (ir + 1) / (self.p["n_rad_tran"] - self.p["boundary"]["n"])
 
                     # in which octant is the point located?
                     oct = int((ic / self.p["n_cell_cir"] / self.p["n_seg"]) * 8.0) % 8
 
+                    # offset so radial lines don't point to the center but the interface between quad and circular mesh
+                    dx = 0.0
+                    dy = 0.0
+
                     # check if point not on axis
                     if (ic * 4.0 / self.p["n_cell_cir"] / self.p["n_seg"]) % 1 != 0:
+                        cir90 = cir % (np.pi / 2.0)
+                        nq = (self.p["n_quad"] - 1) / 2
+                        icm = (ic % nq) / nq
                         if oct % 2 == 0:
-                            rad_mod = rad * (
-                                (1 - i_trans) ** 2 / np.cos(cir % (np.pi / 2.0))
-                                + 2 * i_trans
-                                - i_trans**2
-                            )
+                            rad_mod = rad * ((1.0 - i_trans) ** 2 / np.cos(cir90) + 2.0 * i_trans - i_trans**2)
+                            dd = (1.0 - i_trans) * (icm - np.tan(cir90))
                         else:
-                            rad_mod = rad * (
-                                (1 - i_trans) ** 2 / np.sin(cir % (np.pi / 2.0))
-                                + 2 * i_trans
-                                - i_trans**2
-                            )
+                            rad_mod = rad * ((1.0 - i_trans) ** 2 / np.sin(cir90) + 2.0 * i_trans - i_trans**2)
+                            dd = (1.0 - i_trans) * (1.0 - icm + np.tan(cir90 - np.pi / 2.0))
+                        if oct in [2, 4, 5, 7]:
+                            dd *= -1
+                        if oct in [1, 2, 5, 6]:
+                            dx = dd
+                        else:
+                            dy = dd
                     else:
                         rad_mod = rad
 
@@ -297,8 +302,8 @@ class Mesh(Simulation):
                             - ib_ratio * self.p["boundary"]["thickness"]
                         )
                     self.points[pid] = [
-                        rad_mod * np.cos(cir),
-                        rad_mod * np.sin(cir),
+                        rad_mod * np.cos(cir) + rad_0 * dx,
+                        rad_mod * np.sin(cir) + rad_0 * dy,
                         axi,
                     ]
 
