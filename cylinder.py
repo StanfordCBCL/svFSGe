@@ -277,7 +277,10 @@ class Mesh(Simulation):
                     # check if point not on axis
                     if (ic * 4.0 / self.p["n_cell_cir"] / self.p["n_seg"]) % 1 != 0:
                         cir90 = cir % (np.pi / 2.0)
-                        nq = (self.p["n_quad"] - 1) / 2
+                        if self.p["n_seg"] == 1:
+                            nq = (self.p["n_quad"] - 1) / 2
+                        else:
+                            nq = self.p["n_quad"] - 1
                         icm = (ic % nq) / nq
                         if oct % 2 == 0:
                             rad_mod = rad * ((1.0 - i_trans) ** 2 / np.cos(cir90) + 2.0 * i_trans - i_trans**2)
