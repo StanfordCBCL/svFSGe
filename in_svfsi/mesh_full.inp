@@ -55,10 +55,8 @@ Add equation: lElas {
    Poisson ratio: 0.0
 
    LS type: GMRES {
-      Preconditioner: Trilinos-ICT
-      Tolerance: 1e-6
-      Max iterations: 200
-      Krylov space dimension: 50
+      Preconditioner: PETSc
+      PETSc file path: in_petsc/gmres.inp
    }
 
    Output: Spatial {

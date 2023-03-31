@@ -55,13 +55,8 @@ Add equation: fluid {
    Viscosity: Constant {Value: 4e-6}
 
    LS type: GMRES {
-#      Preconditioner: Trilinos-ILUT
-#      Preconditioner: Trilinos-ML # slow
-#      Preconditioner: Trilinos-Diagonal # slow
-      Preconditioner: Trilinos-ICT
-      Tolerance: 1e-3
-      Max iterations: 200
-      Krylov space dimension: 300
+      Preconditioner: PETSc
+      PETSc file path: in_petsc/gmres.inp
    }
 
    Output: Spatial {

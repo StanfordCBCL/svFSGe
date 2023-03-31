@@ -40,12 +40,6 @@ Add mesh: msh {
    Add face: outside {
       Face file path: mesh_tube_fsi/solid/mesh-surfaces/outside.vtp
    }
-   Add face: x_zero {
-      Face file path: mesh_tube_fsi/solid/mesh-surfaces/x_zero.vtp
-   }
-   Add face: y_zero {
-      Face file path: mesh_tube_fsi/solid/mesh-surfaces/y_zero.vtp
-   }
    Mesh scale factor: 1.0
 }
 
@@ -76,10 +70,8 @@ Add equation: struct {
 
    LS type: GMRES
    {
-      Tolerance:           1e-6
-      Max iterations:      2
-      Krylov space dimension: 1000
-      Preconditioner:  Trilinos-GR
+      Preconditioner: PETSc
+      PETSc file path: in_petsc/direct.inp
    }
 
    # plane strain
