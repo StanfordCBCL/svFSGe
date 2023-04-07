@@ -11,7 +11,6 @@ from copy import deepcopy
 import argparse
 
 import matplotlib.pyplot as plt
-from profilehooks import profile
 
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 
@@ -50,7 +49,6 @@ class FSG(svFSI):
         # plot convergence
         self.plot_convergence()
 
-    @profile
     def main(self):
         # print reynolds number
         print("Re = " + str(int(self.p["re"])))
@@ -101,7 +99,7 @@ class FSG(svFSI):
                 if self.p["coup"]["method"] in ["static", "aitken"]:
                     for name, e in self.p["coup"]["omega"].items():
                         out += "{:.2e}".format(e[-1][-1]) + "\t"
-                for f in self.fields:
+                for f in times.keys():
                     out += "{:.2e}".format(times[f]) + "\t"
                 print(out)
 
