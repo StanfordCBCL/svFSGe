@@ -61,6 +61,7 @@
     "name": "partitioned",
     "paths": {
         "in_geo": "/home/pfaller/work/repos/FSG/in_geo",
+        "in_petsc": "/home/pfaller/work/repos/FSG/in_petsc",
         "in_svfsi": "/home/pfaller/work/repos/FSG/in_svfsi",
         "exe": "/home/pfaller/work/repos",
         "root": "."
