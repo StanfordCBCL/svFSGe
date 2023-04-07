@@ -58,6 +58,9 @@ class svFSI(Simulation):
             if f[:2] == "f_":
                 os.makedirs(self.p[f])
 
+        # copy configureation files
+        shutil.copytree(self.p["paths"]["in_petsc"], join(self.p["f_out"], "in_petsc"))
+
         # generate and initialize mesh
         self.mesh_p = generate_mesh(
             join(self.p["paths"]["in_geo"], self.p["mesh"])
@@ -310,6 +313,7 @@ class svFSI(Simulation):
 
         # execute svFSI
         exe = ["mpiexec", "-np", str(self.p["n_procs"][name])]
+        # exe = ["mpiexec", "--use-hwthread-cpus"]
         exe += [join(self.p["paths"]["exe"], self.p["exe"][name])]
         exe += [join(self.p["paths"]["in_svfsi"], self.p["inp"][name])]
 
@@ -533,8 +537,22 @@ class svFSI(Simulation):
         wss = 4.0 * self.p["fluid"]["mu"] * q / np.pi / rad[map_int] ** 3.0
         self.curr.add(("fluid", "wss", "int"), wss)
 
-    def get_re(self):
-        return
+    def ctrl_vol(self, t):
+        # fluid flow and pressure
+        q = self.p["fluid"]["q0"]
+        p = self.p["fluid"]["p0"] * self.p_vec[t]
+
+        # fluid mesh points in reference configuration
+        points_r = deepcopy(self.points[("vol", "fluid")])
+
+        # fluid mesh points in current configuration
+        disp = deepcopy(self.curr.get(("fluid", "disp", "vol")))
+        points_f = points_r + disp
+
+        # radial coordinate of all points
+        rad = np.sqrt(points_f[:, 0] ** 2 + points_f[:, 1] ** 2)
+
+        pdb.set_trace()
 
 
 class Solution:
