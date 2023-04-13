@@ -49,7 +49,7 @@ Add equation: struct {
    Coupled: 1
    Min iterations: 2
    Max iterations: 200
-   Tolerance: 1e-8
+   Tolerance: 1e-10
 
    Constitutive model: GR_Equilibrated
    Elasticity modulus: 1.0e-16
@@ -95,7 +95,7 @@ Add equation: struct {
       Type: Robin
       Time dependence: Steady
       Value: 0.0
-      Stiffness : 10.0
+      Stiffness : 0.1
       Damping: 0.0
       Apply along normal direction: f
    }

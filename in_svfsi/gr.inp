@@ -82,11 +82,8 @@ Add equation: struct {
 
    LS type: GMRES
    {
-      Tolerance:           1e-6
-      Max iterations:      1
-      Krylov space dimension: 2
-#      Preconditioner:  Trilinos-ML-XML
-#      XML file path: in_linear/direct.xml
+      Preconditioner: PETSc
+      PETSc file path: in_petsc/direct.inp
    }
 
    # plane strain
