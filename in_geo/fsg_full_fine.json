@@ -4,10 +4,11 @@
     "r_outer": 0.687,
     "height": 15.0,
     "n_seg": 1,
-    "n_axi": 120,
-    "n_cir": 32,
+    "n_axi": 240,
+    "n_cir": 64,
     "n_rad_gr": 1,
     "n_rad_tran": 36,
+    "exp": 10,
     "boundary": {
         "n": 4,
         "thickness": 0.05
