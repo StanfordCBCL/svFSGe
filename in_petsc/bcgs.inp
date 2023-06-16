@@ -1,0 +1,3 @@
+-ksp_type bcgs
+-pc_type bjacobi
+-sub_pc_type ilu
