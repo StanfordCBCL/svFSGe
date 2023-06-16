@@ -283,7 +283,7 @@ class FSG(svFSI):
                 # remove linearly dependent vectors
                 while True:
                     # QR decomposition
-                    qq, rr = np.linalg.qr(np.array(self.mat_V[:nq]).T)
+                    _, rr = np.linalg.qr(np.array(self.mat_V[:nq]).T)
 
                     # tolerance for redundant vectors
                     i_eps = np.where(
@@ -439,10 +439,8 @@ class FSG(svFSI):
             # first step: no old solution
             err = 1.0
         else:
-            # normalized error
-            err = np.linalg.norm(np.abs(self.res[-1])) / np.linalg.norm(
-                np.abs(self.curr.get((domain, name, "int")))
-            )
+            # inf-norm on residual displacement L2-norm
+            err = np.max(np.linalg.norm(self.res[-1].reshape((-1, 3)), axis=1))
 
         # start a new sub-list for new load step
         if n == 0:
