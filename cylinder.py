@@ -51,6 +51,14 @@ def spacing(z, p):
             return a
 
 
+def spacing_var(z, e=6):
+    if z > 0.5:
+        coeff = (z - 0.5)**e
+    else:
+        coeff = - (-z + 0.5)**e
+    return 0.5 * (z + 0.5 + coeff / 0.5**(e - 1.0))
+
+
 class Mesh(Simulation):
     def __init__(self, f_params=None):
         # mesh parameters
@@ -108,10 +116,12 @@ class Mesh(Simulation):
         self.f = {}
         if "adapt" in self.p:
             self.f["axi"] = lambda z: spacing(z, self.p["adapt"])
+        elif "exp" in self.p:
+            self.f['axi'] = lambda z: spacing_var(z, self.p["exp"])
         # self.f['axi'] = lambda z: np.sqrt(z)
         # self.f['axi'] = lambda z: z**2
         # self.f['axi'] = lambda z: np.log(z + 1) / np.log(2)
-        # self.f['axi'] = lambda z: np.exp(z ** 2) - 1
+        # self.f['axi'] = lambda z: np.exp(z ** 2) + 0.5
         else:
             self.f["axi"] = lambda z: z
         if "boundary" not in self.p:
@@ -520,6 +530,14 @@ class Mesh(Simulation):
             self.point_data["ids_" + name] = np.zeros(len(self.points), dtype=int)
             self.point_data["ids_" + name][ids] = 1
 
+        # add insult profile
+        # axi = self.points[:, 2]
+        # axi -= np.max(axi)
+        # axi /= np.max(axi) * 8
+        f_axi = np.exp(-np.power(np.abs((self.cosy[:, 2] - 0.5) * 4.0), 2))
+        f_cir = np.exp(-np.power(np.abs((self.cosy[:, 1] - 0.5) / 0.55), 6))
+        self.point_data["insult"] = f_axi * f_cir
+
         # assemble cell data
         self.cell_data = {
             "GlobalElementID": np.expand_dims(np.arange(len(self.cells)) + 1, axis=1)
@@ -644,7 +662,7 @@ class Mesh(Simulation):
             raise ValueError("Unknown profile option: " + profile)
 
         # export inflow profile: GlobalNodeID, weight
-        if False:
+        if True:
             with open(os.path.join(self.p["f_out"], "inflow_profile.dat"), "w") as file:
                 for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
                     file.write(str(i) + " " + str(-v))
