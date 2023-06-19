@@ -4,15 +4,15 @@
     "tortuosity": false,
     "mesh": "fsg_full_medium.json",
     "n_procs": {
-        "fluid": 8,
-        "mesh": 8,
-        "solid": 8  
+        "fluid": 12,
+        "mesh": 12,
+        "solid": 12  
     },
     "fluid": {
         "mu": 4e-06,
         "rho": 1.06e-6,
         "p0": 13.9868,
-        "q0": 8000.0,
+        "q0": 1000.0,
         "q0_rate": 2000.0
     },
     "n_max": {
@@ -26,10 +26,10 @@
         "tol": 1.0e-3,
         "method": "iqn_ils",
         "omega0": 0.01,
-        "iqn_ils_q": 10,
-        "iqn_ils_eps": 1.0e-12
+        "iqn_ils_q": 30,
+        "iqn_ils_eps": 1.0e-2
     },
-    "nmax": 10,
+    "nmax": 100,
     "fmax": 1.0,
     "predict_file": false,
     "exe": {
@@ -59,10 +59,16 @@
         "solid": "gr_restart"
     },
     "name": "partitioned",
-    "paths_linux": {
+    "paths_linux_ubuntu": {
         "in_geo": "/home/pfaller/work/repos/FSG/in_geo",
         "in_svfsi": "/home/pfaller/work/repos/FSG/in_svfsi",
         "exe": "/home/pfaller/work/repos",
+        "root": "."
+    },
+    "paths_linux_centos": {
+        "in_geo": "/home/users/pfaller/work/repos/FSG/in_geo",
+        "in_svfsi": "/home/users/pfaller/work/repos/FSG/in_svfsi",
+        "exe": "/home/users/pfaller/work/repos",
         "root": "."
     },
     "paths_darwin": {
