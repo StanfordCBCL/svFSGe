@@ -61,12 +61,14 @@
     "name": "partitioned",
     "paths_linux_ubuntu": {
         "in_geo": "/home/pfaller/work/repos/FSG/in_geo",
+        "in_petsc": "/home/pfaller/work/repos/FSG/in_petsc",
         "in_svfsi": "/home/pfaller/work/repos/FSG/in_svfsi",
         "exe": "/home/pfaller/work/repos",
         "root": "."
     },
     "paths_linux_centos": {
         "in_geo": "/home/users/pfaller/work/repos/FSG/in_geo",
+        "in_petsc": "/home/users/pfaller/work/repos/FSG/in_petsc",
         "in_svfsi": "/home/users/pfaller/work/repos/FSG/in_svfsi",
         "exe": "/home/users/pfaller/work/repos",
         "root": "."
