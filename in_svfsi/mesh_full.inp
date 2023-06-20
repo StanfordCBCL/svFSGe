@@ -56,7 +56,7 @@ Add equation: lElas {
 
    LS type: GMRES {
       Preconditioner: PETSc
-      PETSc file path: in_petsc/gmres.inp
+      PETSc file path: in_petsc/direct.inp
    }
 
    Output: Spatial {
