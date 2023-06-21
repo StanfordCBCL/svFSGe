@@ -1,0 +1,9 @@
+*_res_*
+*.pvsm
+*.png
+*-procs
+*.vscode
+*.swp
+__pycache__
+*.vt*
+*.txt
