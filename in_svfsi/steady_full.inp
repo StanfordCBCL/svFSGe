@@ -50,43 +50,25 @@ Add equation: fluid {
 
    LS type: GMRES {
       Preconditioner: PETSc
-      PETSc file path: in_petsc/gmres.inp
+      PETSc file path: in_petsc/bcgs.inp
    }
 
    Output: Spatial {
-#      Velocity: t
-#      Pressure: t
-#      Acceleration: t
       WSS: t
    }
-
-   # fluid: inflow
-#   Add BC: f_start {
-#      Type: Dir
-#      Impose flux: t
-#      Zero out perimeter: f
-#      Time dependence: Unsteady
-#      Temporal values file path: steady_flow.dat
-#      Profile: User_defined
-#      Spatial profile file path: mesh_tube_fsi/inflow_profile.dat
-#   }
 
    # fluid: inflow vector
    Add BC: f_start {
       Type: Dir
       Zero out perimeter: f
+      # Time dependence: Steady
+      # Value: -2000.0
+      # Time dependence: Unsteady
+      # Profile: Parabolic
+      # Temporal values file path: steady_flow.dat
       Time dependence: General
       Temporal and spatial values file path: inflow_vector.dat
    }
-
-   # fluid: inflow vector
-#   Add BC: f_start {
-#      Type: Dir
-#      Zero out perimeter: f
-#      Time dependence: Steady
-#      Profile: Parabolic
-#      Value: -250.0
-#   }
 
    # fluid: no slip
    Add BC: f_interface {

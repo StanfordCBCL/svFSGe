@@ -1,0 +1,4 @@
+-ksp_type bcgs
+-pc_type bjacobi
+-sub_pc_type ilu
+-ksp_rtol 1e-6

@@ -9,6 +9,8 @@ import datetime
 import scipy
 import scipy.stats
 import subprocess
+import platform
+import distro
 import numpy as np
 from copy import deepcopy
 from collections import defaultdict
@@ -46,6 +48,12 @@ class svFSI(Simulation):
 
         # time stamp
         ct = str(datetime.datetime.now()).replace(" ", "_").replace(":", "-")
+
+        # select paths for this platform
+        plat = platform.system().lower()
+        if plat == 'linux':
+            plat += '_' + distro.name().split()[0].lower()
+        self.p["paths"] = self.p["paths_" + plat]
 
         # output folder name
         self.p["f_out"] = join(self.p["paths"]["root"], self.p["name"] + "_" + ct)
@@ -154,7 +162,12 @@ class svFSI(Simulation):
         if t == 0:
             q = q0 * np.min([i * self.p["fluid"]["q0_rate"] / q0, 1.0])
         else:
-            q = q0
+            if "q1" in self.p["fluid"]:
+                f_time = t / self.p["nmax"]
+                q1 = deepcopy(self.p["fluid"]["q1"] / self.mesh_p["n_seg"])
+                q = q0 * (1.0 - f_time) + q1 * f_time
+            else:
+                q = q0
 
         # fluid pressure (scale by current pressure load step)
         p = self.p["fluid"]["p0"] * self.p_vec[t]
@@ -423,11 +436,11 @@ class svFSI(Simulation):
         # quadratic flow profile (integrates to one, zero on the FS-interface)
         u_profile = 2.0 * (1.0 - rad_norm**2.0)
 
+        # time factor
+        f_time = t / self.p["nmax"]
+    
         # custom flow profile
-        if "profile" in self.p:
-            # time factor
-            f_time = t / self.p["nmax"]
-
+        if "profile_beta" in self.p:
             # limits
             beta_min = self.p["profile"]["beta_min"]
             beta_max = self.p["profile"]["beta_max"]
@@ -442,6 +455,9 @@ class svFSI(Simulation):
             bias[pos] /= bias0[pos]
 
             u_profile *= bias
+        elif "profile_plub" in self.p:
+            plug = self.p["profile_plug"] * f_time
+
         return u_profile
 
     def write_profile(self, t):
@@ -462,14 +478,6 @@ class svFSI(Simulation):
 
         # get flow profile at inlet
         u_profile = 1.0 / area * self.get_profile(x_norm, rad_norm, t)
-
-        # export inflow profile: GlobalNodeID, weight
-        if False:
-            with open("inflow_profile.dat", "w") as file:
-                for line, (i, v) in enumerate(zip(i_inlet, u_profile)):
-                    file.write(str(i + 1) + " " + str(-v))
-                    if line < len(i_inlet) - 1:
-                        file.write("\n")
 
         return i_inlet, u_profile
 
