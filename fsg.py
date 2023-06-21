@@ -101,6 +101,11 @@ class FSG(svFSI):
                         out += "{:.2e}".format(e[-1][-1]) + "\t"
                 for f in times.keys():
                     out += "{:.2e}".format(times[f]) + "\t"
+
+                # check if coupling unconverged (screen and file output)
+                if n == self.p["coup"]["nmax"] - 1:
+                    out += "\n\tcoupling unconverged"
+                    status = True
                 print(out)
 
                 # archive solution
@@ -124,8 +129,6 @@ class FSG(svFSI):
 
                     # terminate coupling
                     break
-            else:
-                print("\tcoupling unconverged")
 
     def plot_convergence(self):
         n_sol = len(self.err.keys())
