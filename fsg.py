@@ -272,8 +272,8 @@ class FSG(svFSI):
         # relax solid update
         self.coup_omega("disp", i, t, n)
         if not self.coup_converged(n):
-            # no IQN-ILS update during preloading or first iteration step
-            if t == 0 or n == 0:
+            # no IQN-ILS update during preloading or first time step
+            if t<= 1:
                 self.coup_relax("solid", "disp", i, t, n)
             else:
                 # maximum number of time steps used in IQN-ILS
