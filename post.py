@@ -42,7 +42,7 @@ def read_res(fname, fsge):
         res += [solid]
     return res
 
-def get_points(pts_xyz):
+def get_ids(pts_xyz):
     # coordinates of all points (in reference configuration)
     pts_cra = xyz2cra(pts_xyz.T).T
     
@@ -73,30 +73,57 @@ def get_points(pts_xyz):
             for rn, rp in p_rad.items():
                 points[str(cn) + "_" + rn + "_" + an] = cra2xyz([cp, rp, ap])
     
+    # collect all line coordinates
+    lines = {}
+    for cn, cp in p_cir.items():
+        for rn, rp in p_rad.items():
+            lines[str(cn) + "_" + rn] = cra2xyz([cp, rp, 0.0])
+    
     # collect all point ids
-    ids = {}
+    pids = {}
     for n, pt in points.items():
+        # get id
         chk = [np.isclose(pts_xyz[:, i], pt[i]) for i in range(3)]
         id = np.where(np.logical_and.reduce(np.array(chk)))[0]
         assert len(id) == 1, "point definition not unique: " + str(pt)
-        ids[n] = id[0]
-    return ids
+        pids[n] = id[0]
 
-# def get_lines(pts_xyz):
-    # # collect all line coordinates
-    # lines = {}
-    # for cn, cp in p_cir.items():
-    #     for rn, rp in p_rad.items():
+    # collect all line ids
+    lids = {}
+    for n, ln in lines.items():
+        # get ids
+        chk = [np.isclose(pts_xyz[:, i], ln[i]) for i in range(2)]
+        id = np.where(np.logical_and.reduce(np.array(chk)))[0]
 
-    # pdb.set_trace()
+        # sort according to z-coordinate
+        zs = pts_xyz[id, 2]
+        lids[n] = id[np.argsort(zs)]
+    return pids, lids
 
-def get_disp(results, pts, ids):
+def get_disp(results, pts, pids, lids):
     # get displacements in radial coordinates at all extracted points
     disp = defaultdict(list)
     for res in results:
         d = v2n(res.GetPointData().GetArray("Displacement"))
-        for n, pt in ids.items():
-            disp[n] += [xyz2cra(pts[pt] + d[pt]) - xyz2cra(pts[pt])]
+        for n, pt in pids.items():
+            diff = xyz2cra(pts[pt] + d[pt]) - xyz2cra(pts[pt])
+            disp["p_" + n] += [diff]
+    else:
+        d = v2n(res.GetPointData().GetArray("Displacement"))
+        for n, ln in lids.items():
+            ref = []
+            ds = []
+            for l in ln:
+                diff = xyz2cra(pts[l] + d[l]) - xyz2cra(pts[l])
+                if diff[0] < -np.pi:
+                    diff[0] += 2.0 * np.pi
+
+                ref += [pts[l][2]]
+                ds += [diff]
+            disp["l_" + n] = np.array(ds)
+            disp["lr_" + n] = np.array(ref)
+    
+    # convert to numpy arrays
     for n in disp.keys():
         disp[n] = np.array(disp[n])
     return disp
@@ -117,32 +144,46 @@ def post(f_out):
     # extract points
     pts = v2n(res[0].GetPoints().GetData())
 
-    # get point ids
-    ids = get_points(pts)
+    # get point and line ids
+    pids, lids = get_ids(pts)
 
     # extract displacements
-    return get_disp(res, pts, ids)
+    return get_disp(res, pts, pids, lids)
 
 def plot_disp(data, out):
     coords = ["cir", "rad", "axi"]
+
+    # todo: change label of cir coordinate
+
+    # point plots
     fig, ax = plt.subplots(3, 2, figsize=(20, 10), sharex="col", sharey="row")
     for j, (n, d) in enumerate(data.items()):
         for i in range(3):
-            ax[i, j].plot(d["0_out_mid"][:, i])
-            ax[i, j].plot(d["3_out_mid"][:, i])
-            ax[i, j].plot(d["6_out_mid"][:, i])
-            ax[i, j].plot(d["9_out_mid"][:, i])
+            loc = "out_mid"
+            for k in range(0, 12, 3):
+                ax[i, j].plot(d["p_" + str(k) + "_" + loc][:, i])
             ax[i, j].grid(True)
-            ax[i, j].set_title(n + " " + coords[i])
-    fig.savefig(os.path.join(out, "displacement.png"))
+            ax[i, j].set_title(n + " " + coords[i] + " " + loc)
+            ax[i, j].set_xlabel("Load step [-]")
+            ax[i, j].set_ylabel("Displacement " + coords[i] + " [mm]")
+    fig.savefig(os.path.join(out, "displacement_points.png"))
     plt.close(fig)
 
-# def main_arg():
-#     parser = argparse.ArgumentParser(description="Post-process FSGe simulation")
-#     parser.add_argument("out1", help="svFSI output folder")
-#     parser.add_argument("out2", help="fsg.py output folder")
-#     args = parser.parse_args()
-#     plot_disp(args.out1, args.out2)
+    # line plots
+    fig, ax = plt.subplots(3, 2, figsize=(20, 10), sharex="col", sharey="row")
+    for j, (n, d) in enumerate(data.items()):
+        for i in range(3):
+            loc = "out"
+            time = -1
+            for k in range(0, 12, 3):
+                id = str(k) + "_" + loc
+                ax[i, j].plot(d["lr_" + id], d["l_" + id][:, i])
+            ax[i, j].grid(True)
+            ax[i, j].set_title(n + " " + coords[i] + " " + loc)
+            ax[i, j].set_xlabel("Vessel length [mm]")
+            ax[i, j].set_ylabel("Displacement " + coords[i] + " [mm]")
+    fig.savefig(os.path.join(out, "displacement_line.png"))
+    plt.close(fig)
 
 def main():
     # define paths
