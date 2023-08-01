@@ -152,8 +152,7 @@ def post(f_out):
 
 def plot_disp(data, out):
     coords = ["cir", "rad", "axi"]
-
-    # todo: change label of cir coordinate
+    units = ["°", "mm", "mm"]
 
     # point plots
     fig, ax = plt.subplots(3, 2, figsize=(20, 10), sharex="col", sharey="row")
@@ -161,11 +160,14 @@ def plot_disp(data, out):
         for i in range(3):
             loc = "out_mid"
             for k in range(0, 12, 3):
-                ax[i, j].plot(d["p_" + str(k) + "_" + loc][:, i])
+                curve = d["p_" + str(k) + "_" + loc][:, i]
+                if i == 0:
+                    curve *= 180 / np.pi
+                ax[i, j].plot(curve)
             ax[i, j].grid(True)
             ax[i, j].set_title(n + " " + coords[i] + " " + loc)
             ax[i, j].set_xlabel("Load step [-]")
-            ax[i, j].set_ylabel("Displacement " + coords[i] + " [mm]")
+            ax[i, j].set_ylabel("Displacement " + coords[i] + " [" +units[i] + "]")
     fig.savefig(os.path.join(out, "displacement_points.png"))
     plt.close(fig)
 
@@ -174,14 +176,16 @@ def plot_disp(data, out):
     for j, (n, d) in enumerate(data.items()):
         for i in range(3):
             loc = "out"
-            time = -1
             for k in range(0, 12, 3):
                 id = str(k) + "_" + loc
-                ax[i, j].plot(d["lr_" + id], d["l_" + id][:, i])
+                curve = d["l_" + id][:, i]
+                if i == 0:
+                    curve *= 180 / np.pi
+                ax[i, j].plot(d["lr_" + id], curve)
             ax[i, j].grid(True)
             ax[i, j].set_title(n + " " + coords[i] + " " + loc)
             ax[i, j].set_xlabel("Vessel length [mm]")
-            ax[i, j].set_ylabel("Displacement " + coords[i] + " [mm]")
+            ax[i, j].set_ylabel("Displacement " + coords[i] + " [" +units[i] + "]")
     fig.savefig(os.path.join(out, "displacement_line.png"))
     plt.close(fig)
 
