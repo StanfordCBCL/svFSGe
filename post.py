@@ -107,6 +107,8 @@ def get_disp(results, pts, pids, lids):
         d = v2n(res.GetPointData().GetArray("Displacement"))
         for n, pt in pids.items():
             diff = xyz2cra(pts[pt] + d[pt]) - xyz2cra(pts[pt])
+            if diff[0] < -np.pi:
+                diff[0] += 2.0 * np.pi
             disp["p_" + n] += [diff]
     else:
         d = v2n(res.GetPointData().GetArray("Displacement"))
@@ -117,7 +119,6 @@ def get_disp(results, pts, pids, lids):
                 diff = xyz2cra(pts[l] + d[l]) - xyz2cra(pts[l])
                 if diff[0] < -np.pi:
                     diff[0] += 2.0 * np.pi
-
                 ref += [pts[l][2]]
                 ds += [diff]
             disp["l_" + n] = np.array(ds)
@@ -151,42 +152,37 @@ def post(f_out):
     return get_disp(res, pts, pids, lids)
 
 def plot_disp(data, out):
+    plot(data, os.path.join(out, "displacement_points.png"), "pt", "out_mid")
+    plot(data, os.path.join(out, "displacement_lines.png"), "ln", "out")
+
+def plot(data, out, mode, loc):
     coords = ["cir", "rad", "axi"]
     units = ["°", "mm", "mm"]
 
-    # point plots
-    fig, ax = plt.subplots(3, 2, figsize=(20, 10), sharex="col", sharey="row")
+    fig, ax = plt.subplots(3, len(data), figsize=(15, len(data) * 5), sharex="col", sharey="row")
     for j, (n, d) in enumerate(data.items()):
         for i in range(3):
-            loc = "out_mid"
             for k in range(0, 12, 3):
-                curve = d["p_" + str(k) + "_" + loc][:, i]
+                label = str(k) + "_" + loc
+                if mode == "pt":
+                    ydata = d["p_" + label][:, i]
+                    xdata = np.arange(0, len(ydata))
+                    xlabel = "Load step [-]"
+                elif mode == "ln":
+                    ydata = d["l_" + label][:, i]
+                    xdata = d["lr_" + label]
+                    xlabel = "Vessel length [mm]"
+                else:
+                    raise RuntimeError("Unknown mode: " + mode)
                 if i == 0:
-                    curve *= 180 / np.pi
-                ax[i, j].plot(curve)
+                    ydata *= 180 / np.pi
+                ax[i, j].plot(xdata, ydata)
             ax[i, j].grid(True)
             ax[i, j].set_title(n + " " + coords[i] + " " + loc)
-            ax[i, j].set_xlabel("Load step [-]")
+            ax[i, j].set_xlabel(xlabel)
             ax[i, j].set_ylabel("Displacement " + coords[i] + " [" +units[i] + "]")
-    fig.savefig(os.path.join(out, "displacement_points.png"))
-    plt.close(fig)
-
-    # line plots
-    fig, ax = plt.subplots(3, 2, figsize=(20, 10), sharex="col", sharey="row")
-    for j, (n, d) in enumerate(data.items()):
-        for i in range(3):
-            loc = "out"
-            for k in range(0, 12, 3):
-                id = str(k) + "_" + loc
-                curve = d["l_" + id][:, i]
-                if i == 0:
-                    curve *= 180 / np.pi
-                ax[i, j].plot(d["lr_" + id], curve)
-            ax[i, j].grid(True)
-            ax[i, j].set_title(n + " " + coords[i] + " " + loc)
-            ax[i, j].set_xlabel("Vessel length [mm]")
-            ax[i, j].set_ylabel("Displacement " + coords[i] + " [" +units[i] + "]")
-    fig.savefig(os.path.join(out, "displacement_line.png"))
+            ax[i, j].set_xlim([np.min(xdata), np.max(xdata)])
+    fig.savefig(out, bbox_inches='tight')
     plt.close(fig)
 
 def main():
