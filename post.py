@@ -94,6 +94,7 @@ def get_ids(pts_xyz):
         # get ids
         chk = [np.isclose(pts_xyz[:, i], ln[i]) for i in range(2)]
         id = np.where(np.logical_and.reduce(np.array(chk)))[0]
+        assert len(id) > 1, "line definition empty: " + str(ln)
 
         # sort according to z-coordinate
         zs = pts_xyz[id, 2]
@@ -104,30 +105,52 @@ def get_disp(results, pts, pids, lids):
     # get displacements in radial coordinates at all extracted points
     disp = defaultdict(list)
     for res in results:
+        extract_disp(disp, res, pts, pids, "p")
+    extract_disp(disp, results[-1], pts, lids, "l")
+    for loc in disp.keys():
+        disp[loc] = np.array(disp[loc])
+    return disp
+
+def extract_disp(disp, res, pts, ids, mode):
+    d = v2n(res.GetPointData().GetArray("Displacement"))
+    for n, pt in ids.items():
+        # displacement in polar coordinates
+        diff = xyz2cra((pts[pt] + d[pt]).T) - xyz2cra(pts[pt].T)
+
+        # limit angle to [-pi, pi)
+        diff[0] += np.pi
+        diff[0] %= 2.0 * np.pi
+        diff[0] -= np.pi
+        disp[mode + "_" + n] += [diff.T]
+
+        # store z-coordinate for lines
+        if mode == "l":
+            disp["lr_" + n] = pts[pt, 2]
+
+def get_scalar(results, pts, pids, lids):
+    scalar = defaultdict(list)
+
+    ids = {"p": pids, "l": lids}
+    # extract thickness
+    for res in results:
         d = v2n(res.GetPointData().GetArray("Displacement"))
-        for n, pt in pids.items():
-            diff = xyz2cra(pts[pt] + d[pt]) - xyz2cra(pts[pt])
-            if diff[0] < -np.pi:
-                diff[0] += 2.0 * np.pi
-            disp["p_" + n] += [diff]
+        for m in pids.keys():
+            if "out" in m:
+                m_in = m.replace("out", "in")
+                m_thick = m.replace("out", "thick")
+                d_out = pts[pids[m]] + d[pids[m]]
+                d_in = pts[pids[m_in]] + d[pids[m_in]]
+                scalar["p_" + m_thick] += [np.linalg.norm(d_out - d_in)]
     else:
         d = v2n(res.GetPointData().GetArray("Displacement"))
-        for n, ln in lids.items():
-            ref = []
-            ds = []
-            for l in ln:
-                diff = xyz2cra(pts[l] + d[l]) - xyz2cra(pts[l])
-                if diff[0] < -np.pi:
-                    diff[0] += 2.0 * np.pi
-                ref += [pts[l][2]]
-                ds += [diff]
-            disp["l_" + n] = np.array(ds)
-            disp["lr_" + n] = np.array(ref)
-    
-    # convert to numpy arrays
-    for n in disp.keys():
-        disp[n] = np.array(disp[n])
-    return disp
+        for m in lids.keys():
+            if "out" in m:
+                m_in = m.replace("out", "in")
+                m_thick = m.replace("out", "thick")
+                d_out = pts[lids[m]] + d[lids[m]]
+                d_in = pts[lids[m_in]] + d[lids[m_in]]
+                scalar["l_" + m_thick] += [np.linalg.norm((d_out - d_in).T, axis=0)]
+    return scalar
 
 def post(f_out):
     # check if FSGe or conventional G&R results
@@ -149,30 +172,36 @@ def post(f_out):
     pids, lids = get_ids(pts)
 
     # extract displacements
-    return get_disp(res, pts, pids, lids)
+    return get_disp(res, pts, pids, lids)#, get_scalar(res, pts, pids, lids)
 
 def plot_disp(data, out):
     plot_single(data, os.path.join(out, "displacement_points.png"), "pt", "out_mid")
     plot_single(data, os.path.join(out, "displacement_lines.png"), "ln", "out")
+    # plot_single(data, os.path.join(out, "thickness_points.png"), "pt", "thick_mid")
+    # plot_single(data, os.path.join(out, "thickness_lines.png"), "ln", "thick")
 
 def plot_disp_param(data, out):
     plot_single_param(data, os.path.join(out, "displacement_kski.png"), "pt", "out_mid")
+    # plot_single_param(data, os.path.join(out, "thickness_kski.png"), "pt", "thick_mid")
 
 def plot_single(data, out, mode, loc):
     coords = ["cir", "rad", "axi"]
     units = ["°", "mm", "mm"]
 
-    fig, ax = plt.subplots(3, len(data), figsize=(15, len(data) * 5), sharex="col", sharey="row")
+    nx = len(data)
+    ny = 3
+
+    fig, ax = plt.subplots(ny, nx, figsize=(ny * 5, nx * 5), sharex="col", sharey="row")
     for j, (n, d) in enumerate(data.items()):
-        for i in range(3):
+        for i in range(ny):
             for k in range(0, 12, 3):
                 label = str(k) + "_" + loc
                 if mode == "pt":
-                    ydata = d["p_" + label][:, i]
+                    ydata = d["p_" + label].T[i]
                     xdata = np.arange(0, len(ydata))
                     xlabel = "Load step [-]"
                 elif mode == "ln":
-                    ydata = d["l_" + label][:, i]
+                    ydata = d["l_" + label].T[i]
                     xdata = d["lr_" + label]
                     xlabel = "Vessel length [mm]"
                 else:
@@ -211,7 +240,6 @@ def plot_single_param(data, out, mode, loc):
     for j, (lc, dat) in enumerate(data_sorted.items()):
         for mod, dat_k in dat.items():
             for i in range(3):
-                # pdb.set_trace()
                 xdata = kski
                 ydata = dat_k[:, i]
                 if i == 0:
@@ -273,5 +301,7 @@ def main_param():
     plot_disp_param(data, out)
 
 if __name__ == "__main__":
-    # main()
+    main()
     main_param()
+
+# todo: plot thickness and wss
