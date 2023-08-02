@@ -152,10 +152,13 @@ def post(f_out):
     return get_disp(res, pts, pids, lids)
 
 def plot_disp(data, out):
-    plot(data, os.path.join(out, "displacement_points.png"), "pt", "out_mid")
-    plot(data, os.path.join(out, "displacement_lines.png"), "ln", "out")
+    plot_single(data, os.path.join(out, "displacement_points.png"), "pt", "out_mid")
+    plot_single(data, os.path.join(out, "displacement_lines.png"), "ln", "out")
 
-def plot(data, out, mode, loc):
+def plot_disp_param(data, out):
+    plot_single_param(data, os.path.join(out, "displacement_kski.png"), "pt", "out_mid")
+
+def plot_single(data, out, mode, loc):
     coords = ["cir", "rad", "axi"]
     units = ["°", "mm", "mm"]
 
@@ -185,21 +188,90 @@ def plot(data, out, mode, loc):
     fig.savefig(out, bbox_inches='tight')
     plt.close(fig)
 
-def main():
-    # define paths
-    inp = {"G&R": "study_aneurysm/kski_1.0_phi_0.7/coarse/gr/",
-           "FSGe": "study_aneurysm/kski_1.0_phi_0.7/coarse/partitioned/partitioned.json"}
-    out = "study_aneurysm/kski_1.0_phi_0.7/coarse/comparison"
+def plot_single_param(data, out, mode, loc):
+    kski = sorted(data.keys())
+    sims = data[kski[0]].keys()
 
-    # create output folder
+    coords = ["cir", "rad", "axi"]
+    units = ["°", "mm", "mm"]
+
+    # collect data for all parameter variations
+    data_sorted = {}
+    for j in range(0, 12, 3):
+        label = "p_" + str(j) + "_" + loc
+        data_sorted[label] = {}
+        for nam in sims:
+            data_sorted[label][nam] = []
+            for k in kski:
+                data_sorted[label][nam] += [data[k][nam][label][-1]]
+            data_sorted[label][nam] = np.array(data_sorted[label][nam])
+
+    # plot
+    fig, ax = plt.subplots(3, len(data_sorted), figsize=(15, len(data_sorted) * 5), sharex="col", sharey="row")
+    for j, (lc, dat) in enumerate(data_sorted.items()):
+        for mod, dat_k in dat.items():
+            for i in range(3):
+                # pdb.set_trace()
+                xdata = kski
+                ydata = dat_k[:, i]
+                if i == 0:
+                    ydata *= 180 / np.pi
+                ax[i, j].plot(xdata, ydata)
+                ax[i, j].grid(True)
+                ax[i, j].set_title(lc + " " + coords[i])
+                ax[i, j].set_xlabel("KsKi")
+                ax[i, j].set_ylabel("Displacement " + coords[i] + " [" +units[i] + "]")
+                ax[i, j].set_xlim([np.min(xdata), np.max(xdata)])
+    fig.savefig(out, bbox_inches='tight')
+    plt.close(fig)
+
+def main():
+    # set study
+    # for kski in ["0.5"]:  
+    for kski in np.linspace(0.0, 1.0, 5).astype(str):
+        folder = "study_aneurysm"
+        geo = "coarse"
+        phi = "0.7"
+
+        # define paths
+        fpath = os.path.join(folder, geo,  "phi_" + phi, "kski_" + kski)
+        inp = {"G&R": os.path.join(fpath, "gr"),
+            "FSGe": os.path.join(fpath, "partitioned", "partitioned.json")}
+        out = os.path.join(fpath, "comparison")
+
+        # create output folder
+        os.makedirs(out, exist_ok=True)
+
+        # collect all results
+        data = {}
+        for n, o in inp.items():
+            data[n] = post(o)
+        
+        plot_disp(data, out)
+
+def main_param():
+    # set study
+    folder = "study_aneurysm"
+    geo = "coarse"
+    phi = "0.7"
+    
+    kski = np.linspace(0.0, 1.0, 5)
+
+    # define paths
+    out = os.path.join(folder, geo, "phi_" + phi, "comparison")
     os.makedirs(out, exist_ok=True)
 
-    # collect all results
     data = {}
-    for n, o in inp.items():
-        data[n] = post(o)
+    for k in kski:
+        fpath = os.path.join(folder, geo,  "phi_" + phi, "kski_" + str(k))
+        inp = {"G&R": os.path.join(fpath, "gr"),
+               "FSGe": os.path.join(fpath, "partitioned", "partitioned.json")}
+        data[k] = {}
+        for n, o in inp.items():
+            data[k][n] = post(o)
     
-    plot_disp(data, out)
+    plot_disp_param(data, out)
 
 if __name__ == "__main__":
-    main()
+    # main()
+    main_param()
