@@ -185,18 +185,18 @@ def post(f_out):
     # extract displacements
     return get_results(res, pts, pids, lids)
 
-def plot_disp(data, out):
-    plot_single(data, os.path.join(out, "disp_points.png"), "p", "disp", "out_mid")
-    plot_single(data, os.path.join(out, "disp_lines.png"), "l", "disp", "out")
+def plot_disp(data, out, study):
+    # assemble all plots (quantity and location)
+    plot_single(data, os.path.join(out, "disp_points.png"), study, "p", "disp", "out_mid")
     for res in ["thick", "wss"]:
-        plot_single(data, os.path.join(out, res + "_points.png"), "p", res, "mid")
-        plot_single(data, os.path.join(out, res + "_lines.png"), "l", res)
+        plot_single(data, os.path.join(out, res + "_points.png"), study, "p", res, "mid")
+    if study == "single":
+        plot_single(data, os.path.join(out, "disp_lines.png"), study, "l", "disp", "out")
+        for res in ["thick", "wss"]:
+            plot_single(data, os.path.join(out, res + "_lines.png"), study, "l", res)
 
-def plot_disp_param(data, out):
-    plot_single_param(data, os.path.join(out, "displacement_kski.png"), "p", "out_mid")
-    plot_single_param(data, os.path.join(out, "thickness_kski.png"), "p", "thick_mid")
-
-def plot_single(data, out, mode, quant, loc=None):
+def plot_single(data, out, study, mode, quant, loc=""):
+    # plot text
     if quant == "disp":
         coords = ["cir", "rad", "axi"]
         units = ["°", "mm", "mm"]
@@ -212,6 +212,22 @@ def plot_single(data, out, mode, quant, loc=None):
     else:
         raise RuntimeError("Unknown quantity: " + quant)
 
+    # collect data for all parameter variations
+    if study != "single":
+        data_sorted = {}
+        params = sorted(data.keys())
+        sims = data[params[0]].keys()
+        for nam in sims:
+            data_sorted[nam] = {}
+            for j in range(0, 12, 3):
+                yres = "_".join(filter(None, [mode, quant, str(j), loc]))
+                data_sorted[nam][yres] = []
+                for k in params:
+                    data_sorted[nam][yres] += [data[k][nam][yres][-1]]
+                data_sorted[nam][yres] = np.array(data_sorted[nam][yres])
+        data = data_sorted
+
+    # determine plot dimensions
     nx = len(data)
     ny = len(coords)
 
@@ -223,73 +239,41 @@ def plot_single(data, out, mode, quant, loc=None):
             else:
                 pos = (i, j)
             for k in range(0, 12, 3):
-                if loc:
-                    xres = "l_z_" + str(k) + "_" + loc
-                    yres = quant + "_" + str(k) + "_" + loc
-                    title = ylabel + " " + loc + " " + coords[i]
-                else:
-                    xres = "l_z_" + str(k)
-                    yres = quant + "_" + str(k)
-                    title = ylabel + " " + coords[i]
-                ydata = res[mode + "_" + yres]
-                assert len(ydata) > 0, "no data found: " + mode + "_" + yres
+                # get data for y-axis
+                xres = "l_z_" +  "_".join(filter(None, [str(k), loc]))
+                yres =  "_".join(filter(None, [mode, quant, str(k), loc]))
+                title = " ".join(filter(None, [n, ylabel, loc, coords[i]]))
+                ydata = res[yres]
+                assert len(ydata) > 0, "no data found: " + yres
                 if quant == "disp":
                     ydata = ydata.T[i]
-                if mode == "p":
-                    xdata = np.arange(0, len(ydata))
-                    xlabel = "Load step [-]"
-                elif mode == "l":
-                    xdata = res[xres]
-                    xlabel = "Vessel length [mm]"
+
+                # get data for x-axis
+                if study == "single":
+                    if mode == "p":
+                        xdata = np.arange(0, len(ydata))
+                        xlabel = "Load step [-]"
+                    elif mode == "l":
+                        xdata = res[xres]
+                        xlabel = "Vessel length [mm]"
+                    else:
+                        raise RuntimeError("Unknown mode: " + mode)
                 else:
-                    raise RuntimeError("Unknown mode: " + mode)
+                    xdata = params
+                    xlabel = study
                 assert len(xdata) > 0, "no data found: " + xres
+
+                # convert to degrees
                 if i == 0:
                     ydata *= 180 / np.pi
+
+                # plot!
                 ax[pos].plot(xdata, ydata)
             ax[pos].grid(True)
             ax[pos].set_title(title)
             ax[pos].set_xlabel(xlabel)
             ax[pos].set_ylabel(ylabel + " " + coords[i] + " [" +units[i] + "]")
             ax[pos].set_xlim([np.min(xdata), np.max(xdata)])
-    fig.savefig(out, bbox_inches='tight')
-    plt.close(fig)
-
-def plot_single_param(data, out, mode, loc):
-    kski = sorted(data.keys())
-    sims = data[kski[0]].keys()
-
-    coords = ["cir", "rad", "axi"]
-    units = ["°", "mm", "mm"]
-
-    # collect data for all parameter variations
-    data_sorted = {}
-    for j in range(0, 12, 3):
-        label = "p_" + str(j) + "_" + loc
-        data_sorted[label] = {}
-        for nam in sims:
-            data_sorted[label][nam] = []
-            for k in kski:
-                data_sorted[label][nam] += [data[k][nam][label][-1]]
-            data_sorted[label][nam] = np.array(data_sorted[label][nam])
-
-    # plot
-    fig, ax = plt.subplots(3, len(data_sorted), figsize=(15, len(data_sorted) * 5), sharex="col", sharey="row")
-    for j, (lc, dat) in enumerate(data_sorted.items()):
-        for mod, dat_k in dat.items():
-            for i in range(3):
-                xdata = kski
-                ydata = dat_k.T
-                if "thick" not in loc:
-                    ydata = ydata[i]
-                if i == 0:
-                    ydata *= 180 / np.pi
-                ax[i, j].plot(xdata, ydata)
-                ax[i, j].grid(True)
-                ax[i, j].set_title(lc + " " + coords[i])
-                ax[i, j].set_xlabel("KsKi")
-                ax[i, j].set_ylabel("Displacement " + coords[i] + " [" +units[i] + "]")
-                ax[i, j].set_xlim([np.min(xdata), np.max(xdata)])
     fig.savefig(out, bbox_inches='tight')
     plt.close(fig)
 
@@ -315,7 +299,7 @@ def main():
         for n, o in inp.items():
             data[n] = post(o)
         
-        plot_disp(data, out)
+        plot_disp(data, out, "single")
 
 def main_param():
     # set study
@@ -338,10 +322,8 @@ def main_param():
         for n, o in inp.items():
             data[k][n] = post(o)
     
-    # plot_disp_param(data, out)
+    plot_disp(data, out, "kski")
 
 if __name__ == "__main__":
     main()
     main_param()
-
-# todo: plot thickness and wss
