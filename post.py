@@ -231,14 +231,20 @@ def plot_single(data, out, study, mode, quant, loc=""):
     nx = len(data)
     ny = len(coords)
 
-    fig, ax = plt.subplots(ny, nx, figsize=(nx * 10, ny * 5), sharex="col", sharey="row")
+    # plot properties
+    oclocks = range(0, 12, 3)
+    colors = [ '#4477AA', '#EE6677', '#CCBB44', '#228833', '#66CCEE', '#AA3377', '#BBBBBB']
+    styles = ["-", "-", "-", ":"]
+    styles_cir = ["-", "-", ":", "-"]
+
+    fig, ax = plt.subplots(ny, nx, figsize=(nx * 10, ny * 5), dpi=300, sharex="col", sharey="row")
     for j, (n, res) in enumerate(data.items()):
         for i in range(ny):
             if ny == 1:
                 pos = j
             else:
                 pos = (i, j)
-            for k in range(0, 12, 3):
+            for ik, k in enumerate(oclocks):
                 # get data for y-axis
                 xres = "l_z_" +  "_".join(filter(None, [str(k), loc]))
                 yres =  "_".join(filter(None, [mode, quant, str(k), loc]))
@@ -268,7 +274,11 @@ def plot_single(data, out, study, mode, quant, loc=""):
                     ydata *= 180 / np.pi
 
                 # plot!
-                ax[pos].plot(xdata, ydata)
+                if quant == "disp" and i == 0:
+                    stl = styles_cir[ik]
+                else:
+                    stl = styles[ik]
+                ax[pos].plot(xdata, ydata, stl, color=colors[ik], linewidth=2)
             ax[pos].grid(True)
             ax[pos].set_title(title)
             ax[pos].set_xlabel(xlabel)
