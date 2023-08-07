@@ -105,24 +105,52 @@ def get_results(results, pts, pids, lids):
     # get displacements in radial coordinates at all extracted points
     disp = defaultdict(list)
     for res in results:
-        extract_results(disp, res, pts, pids, "p")
-    extract_results(disp, results[-1], pts, lids, "l")
+        extract_results(disp, results[0], res, pts, pids, "p")
+    extract_results(disp, results[0], results[-1], pts, lids, "l")
     for loc in disp.keys():
         disp[loc] = np.array(disp[loc])
     return disp
 
-def extract_results(disp, res, pts, ids, mode):
+def extract_results(disp, res0, res, pts, ids, mode):
     # get nodal displacements
     d = v2n(res.GetPointData().GetArray("Displacement"))
+
+    # Cauchy stress
+    sig = v2n(res.GetPointData().GetArray("Cauchy_stress"))
+    sig0 = v2n(res0.GetPointData().GetArray("Cauchy_stress"))
+
+    # stress invariant
+    trace = np.sum(sig[:,:3], axis=1) / 3
+    trace0 = np.sum(sig0[:,:3], axis=1) / 3
 
     # get nodal wall shear stress
     if res.GetPointData().HasArray("WSS"):
         wss = v2n(res.GetPointData().GetArray("WSS"))
+        wss0 = v2n(res0.GetPointData().GetArray("WSS"))
     else:
+        # enter constants manually based on G&R simulation
         q0 = 1000
         mu = 4.0e-06
+
+        # radial coordinate
         rad = xyz2cra((pts + d).T)[1]
+        rad0 = xyz2cra((pts).T)[1]
+
+        # Poiseuille estimated wss
         wss = 4.0 * mu * q0 / np.pi / rad ** 3.0
+        wss0 = 4.0 * mu * q0 / np.pi / rad0 ** 3.0
+    
+    # get stimuli
+    np.seterr(divide='ignore', invalid='ignore')
+    stim_wss = wss / wss0 - 1.0
+    stim_sig = trace / trace0 - 1.0
+    stim_all = stim_sig / stim_wss
+
+    # fix 0/0 division
+    isnan = np.isnan(stim_all)
+    if np.any(isnan):
+        stim_all[isnan] = 1.0
+
     for n, pt in ids.items():
         # displacement in polar coordinates
         diff = xyz2cra((pts[pt] + d[pt]).T) - xyz2cra(pts[pt].T)
@@ -148,6 +176,16 @@ def extract_results(disp, res, pts, ids, mode):
             else:
                 disp["p_thick_" + n_scalar] += [np.linalg.norm((d_out - d_in).T, axis=0)]
                 disp["p_wss_" + n_scalar] += [wss[pt]]
+        
+        # extract stimuli
+        if mode == "l":
+            disp[mode + "_stim_wss_" + n] = stim_wss[pt]
+            disp[mode + "_stim_sig_" + n] = stim_sig[pt]
+            disp[mode + "_stim_all_" + n] = stim_all[pt]
+        else:
+            disp[mode + "_stim_wss_" + n] += [stim_wss[pt]]
+            disp[mode + "_stim_sig_" + n] += [stim_sig[pt]]
+            disp[mode + "_stim_all_" + n] += [stim_all[pt]]
 
         # store z-coordinate for lines
         if mode == "l":
@@ -187,12 +225,20 @@ def post(f_out):
 
 def plot_disp(data, out, study):
     # assemble all plots (quantity and location)
+    fields = ["thick", "wss"]
+    stimuli = ["wss", "sig", "all"]
+
     plot_single(data, os.path.join(out, "disp_points.png"), study, "p", "disp", "out_mid")
-    for res in ["thick", "wss"]:
+    for s in stimuli:
+        plot_single(data, os.path.join(out, "stim_" + s + "_points.png"), study, "p", "stim_" + s, "in_mid")
+    for res in fields:
         plot_single(data, os.path.join(out, res + "_points.png"), study, "p", res, "mid")
+    
     if study == "single":
         plot_single(data, os.path.join(out, "disp_lines.png"), study, "l", "disp", "out")
-        for res in ["thick", "wss"]:
+        for s in stimuli:
+            plot_single(data, os.path.join(out, "stim_" + s + "_lines.png"), study, "l", "stim_" + s, "in")
+        for res in fields:
             plot_single(data, os.path.join(out, res + "_lines.png"), study, "l", res)
 
 def plot_single(data, out, study, mode, quant, loc=""):
@@ -209,6 +255,18 @@ def plot_single(data, out, study, mode, quant, loc=""):
         coords = [""]
         units = ["?"]
         ylabel = "WSS"
+    elif quant == "stim_wss":
+        coords = [""]
+        units = ["-"]
+        ylabel = "Stimulus WSS"
+    elif quant == "stim_sig":
+        coords = [""]
+        units = ["-"]
+        ylabel = "Stimulus Sigma"
+    elif quant == "stim_all":
+        coords = [""]
+        units = ["-"]
+        ylabel = "KsKi"
     else:
         raise RuntimeError("Unknown quantity: " + quant)
 
@@ -240,10 +298,13 @@ def plot_single(data, out, study, mode, quant, loc=""):
     fig, ax = plt.subplots(ny, nx, figsize=(nx * 10, ny * 5), dpi=300, sharex="col", sharey="row")
     for j, (n, res) in enumerate(data.items()):
         for i in range(ny):
+            # select plot position
             if ny == 1:
                 pos = j
             else:
                 pos = (i, j)
+
+            # loop mesh positions
             for ik, k in enumerate(oclocks):
                 # get data for y-axis
                 xres = "l_z_" +  "_".join(filter(None, [str(k), loc]))
@@ -270,16 +331,16 @@ def plot_single(data, out, study, mode, quant, loc=""):
                 assert len(xdata) > 0, "no data found: " + xres
 
                 # convert to degrees
-                if i == 0:
-                    ydata *= 180 / np.pi
-
-                # plot!
                 if quant == "disp" and i == 0:
+                    ydata *= 180 / np.pi
                     stl = styles_cir[ik]
                 else:
                     stl = styles[ik]
+
+                # plot!
                 ax[pos].plot(xdata, ydata, stl, color=colors[ik], linewidth=2)
             ax[pos].grid(True)
+            ax[pos].axhline(0, color='black',zorder=0)
             ax[pos].set_title(title)
             ax[pos].set_xlabel(xlabel)
             ax[pos].set_ylabel(ylabel + " " + coords[i] + " [" +units[i] + "]")
