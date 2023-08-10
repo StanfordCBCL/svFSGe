@@ -150,9 +150,6 @@ def extract_results(disp, res0, res, pts, ids, mode):
     stim_sig = trace / trace0 - 1.0
     stim_all = stim_sig / stim_wss
 
-    # fix 0/0 division
-    isnan = np.isnan(stim_all)
-
     for n, pt in ids.items():
         # displacement in polar coordinates
         diff = xyz2cra((pts[pt] + d[pt]).T) - xyz2cra(pts[pt].T)
@@ -182,10 +179,10 @@ def extract_results(disp, res0, res, pts, ids, mode):
         # extract stimuli
         if mode == "l":
             disp[mode + "_stim_all_" + n] = stim_all[pt]
-            disp[mode + "_stim_" + n] = np.array([stim_wss[pt],  stim_sig[pt]]).T
+            disp[mode + "_stim_" + n] = np.array([stim_sig[pt], stim_wss[pt]]).T
         else:
             disp[mode + "_stim_all_" + n] += [stim_all[pt]]
-            disp[mode + "_stim_" + n] += [np.array([stim_wss[pt],  stim_sig[pt]])]
+            disp[mode + "_stim_" + n] += [np.array([stim_sig[pt], stim_wss[pt]])]
 
         # store z-coordinate for lines
         if mode == "l":
