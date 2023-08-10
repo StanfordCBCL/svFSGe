@@ -8,12 +8,16 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 
+from matplotlib.ticker import StrMethodFormatter
 from collections import defaultdict
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 
 from svfsi import svFSI
 from vtk_functions import read_geo, threshold
+
+# use LaTeX in text
+plt.rcParams.update({'text.usetex': True, 'font.family': 'serif', 'font.serif': 'Computer Modern Roman', 'font.size': 24})
 
 def cra2xyz(cra):
     return np.array([cra[1] * np.sin(cra[0]), cra[1] * np.cos(cra[0]), cra[2]])
@@ -148,8 +152,6 @@ def extract_results(disp, res0, res, pts, ids, mode):
 
     # fix 0/0 division
     isnan = np.isnan(stim_all)
-    if np.any(isnan):
-        stim_all[isnan] = 1.0
 
     for n, pt in ids.items():
         # displacement in polar coordinates
@@ -179,13 +181,11 @@ def extract_results(disp, res0, res, pts, ids, mode):
         
         # extract stimuli
         if mode == "l":
-            disp[mode + "_stim_wss_" + n] = stim_wss[pt]
-            disp[mode + "_stim_sig_" + n] = stim_sig[pt]
             disp[mode + "_stim_all_" + n] = stim_all[pt]
+            disp[mode + "_stim_" + n] = np.array([stim_wss[pt],  stim_sig[pt]]).T
         else:
-            disp[mode + "_stim_wss_" + n] += [stim_wss[pt]]
-            disp[mode + "_stim_sig_" + n] += [stim_sig[pt]]
             disp[mode + "_stim_all_" + n] += [stim_all[pt]]
+            disp[mode + "_stim_" + n] += [np.array([stim_wss[pt],  stim_sig[pt]])]
 
         # store z-coordinate for lines
         if mode == "l":
@@ -226,49 +226,42 @@ def post(f_out):
 def plot_disp(data, out, study):
     # assemble all plots (quantity and location)
     fields = ["thick", "wss"]
-    stimuli = ["wss", "sig", "all"]
+    # stimuli = ["wss", "sig", "all"]
+    stimuli = ["", "_all"]
+    locations = ["start", "mid", "end"]
 
-    plot_single(data, os.path.join(out, "disp_points.png"), study, "p", "disp", "out_mid")
-    for s in stimuli:
-        plot_single(data, os.path.join(out, "stim_" + s + "_points.png"), study, "p", "stim_" + s, "in_mid")
-    for res in fields:
-        plot_single(data, os.path.join(out, res + "_points.png"), study, "p", res, "mid")
-    
-    if study == "single":
-        plot_single(data, os.path.join(out, "disp_lines.png"), study, "l", "disp", "out")
+    for loc in locations:
+        plot_single(data, os.path.join(out, "disp_points_" + loc + ".png"), study, "p", "disp", "in_" + loc)
         for s in stimuli:
-            plot_single(data, os.path.join(out, "stim_" + s + "_lines.png"), study, "l", "stim_" + s, "in")
+            plot_single(data, os.path.join(out, "stim" + s + "_points_" + loc + ".png"), study, "p", "stim" + s, "in_" + loc)
+        for res in fields:
+            plot_single(data, os.path.join(out, res + "_points_" + loc + ".png"), study, "p", res, loc)
+        
+    if study == "single":
+        plot_single(data, os.path.join(out, "disp_lines.png"), study, "l", "disp", "in")
+        for s in stimuli:
+            plot_single(data, os.path.join(out, "stim" + s + "_lines.png"), study, "l", "stim" + s, "in")
         for res in fields:
             plot_single(data, os.path.join(out, res + "_lines.png"), study, "l", res)
 
 def plot_single(data, out, study, mode, quant, loc=""):
     # plot text
     if quant == "disp":
-        coords = ["cir", "rad", "axi"]
-        units = ["°", "mm", "mm"]
-        ylabel = "Displacement"
+        ylabel = ["Cir. displacement $\Delta\\theta$ [°]",
+                  "Rad. displacement $\Delta r$ [mm]",
+                  "Axi. displacement $\Delta z$ [mm]"]
     elif quant == "thick":
-        coords = [""]
-        units = ["mm"]
-        ylabel = "Thickness"
+        ylabel =[ "Thickness [mm]"]
     elif quant == "wss":
-        coords = [""]
-        units = ["?"]
-        ylabel = "WSS"
-    elif quant == "stim_wss":
-        coords = [""]
-        units = ["-"]
-        ylabel = "Stimulus WSS"
-    elif quant == "stim_sig":
-        coords = [""]
-        units = ["-"]
-        ylabel = "Stimulus Sigma"
+        ylabel = ["WSS [?]"]
     elif quant == "stim_all":
-        coords = [""]
-        units = ["-"]
-        ylabel = "KsKi"
+        ylabel = ["$K_{\\tau\sigma}$ [-]"]
+    elif quant == "stim":
+        ylabel = ["Intramular stimulus $\Delta\sigma_I$ [-]", "WSS stimulus $\Delta\\tau_w$ [-]"]
     else:
         raise RuntimeError("Unknown quantity: " + quant)
+    
+    xstudies = {"kski": "$K_{\\tau\sigma}$"}
 
     # collect data for all parameter variations
     if study != "single":
@@ -287,11 +280,13 @@ def plot_single(data, out, study, mode, quant, loc=""):
 
     # determine plot dimensions
     nx = len(data)
-    ny = len(coords)
+    ny = len(ylabel)
 
     # plot properties
     oclocks = range(0, 12, 3)
-    colors = [ '#4477AA', '#EE6677', '#CCBB44', '#228833', '#66CCEE', '#AA3377', '#BBBBBB']
+    colors = [plt.cm.tab10(i) for i in [0, 1, 3, 2]]
+    # from matplotlib.colors import to_hex
+    # print([to_hex(c) for c in colors])
     styles = ["-", "-", "-", ":"]
     styles_cir = ["-", "-", ":", "-"]
 
@@ -304,15 +299,20 @@ def plot_single(data, out, study, mode, quant, loc=""):
             else:
                 pos = (i, j)
 
+            # plot lines
+            ax[pos].grid(True)
+            if quant != "thick":
+                ax[pos].axhline(0, color='black', zorder=2)
+
             # loop mesh positions
             for ik, k in enumerate(oclocks):
                 # get data for y-axis
                 xres = "l_z_" +  "_".join(filter(None, [str(k), loc]))
                 yres =  "_".join(filter(None, [mode, quant, str(k), loc]))
-                title = " ".join(filter(None, [n, ylabel, loc, coords[i]]))
+                title = n.replace("&", "\&")
                 ydata = res[yres]
                 assert len(ydata) > 0, "no data found: " + yres
-                if quant == "disp":
+                if ny > 1:
                     ydata = ydata.T[i]
 
                 # get data for x-axis
@@ -320,31 +320,38 @@ def plot_single(data, out, study, mode, quant, loc=""):
                     if mode == "p":
                         xdata = np.arange(0, len(ydata))
                         xlabel = "Load step [-]"
+                        xticks = np.arange(0, len(ydata), 2)
                     elif mode == "l":
                         xdata = res[xres]
                         xlabel = "Vessel length [mm]"
+                        xticks = [0, 2, 4, 6, 7.5, 9, 11, 13, 15]
                     else:
                         raise RuntimeError("Unknown mode: " + mode)
                 else:
                     xdata = params
-                    xlabel = study
+                    xlabel = xstudies[study]
+                    xticks = [0, 0.25, 0.5, 0.75, 1]
                 assert len(xdata) > 0, "no data found: " + xres
 
                 # convert to degrees
                 if quant == "disp" and i == 0:
-                    ydata *= 180 / np.pi
+                    ydata *= - 180 / np.pi
                     stl = styles_cir[ik]
                 else:
                     stl = styles[ik]
 
                 # plot!
                 ax[pos].plot(xdata, ydata, stl, color=colors[ik], linewidth=2)
-            ax[pos].grid(True)
-            ax[pos].axhline(0, color='black',zorder=0)
-            ax[pos].set_title(title)
-            ax[pos].set_xlabel(xlabel)
-            ax[pos].set_ylabel(ylabel + " " + coords[i] + " [" +units[i] + "]")
+            ax[pos].set_xticks(xticks)
+            ax[pos].set_xticklabels([str(x) for x in xticks])
             ax[pos].set_xlim([np.min(xdata), np.max(xdata)])
+            if i == 0:
+                ax[pos].set_title(title)
+            if i == ny - 1:
+                ax[pos].set_xlabel(xlabel)
+            if j == 0:
+                ax[pos].set_ylabel(ylabel[i])
+    plt.tight_layout()
     fig.savefig(out, bbox_inches='tight')
     plt.close(fig)
 
@@ -352,7 +359,7 @@ def main():
     # set study
     # for kski in ["0.5"]:  
     for kski in np.linspace(0.0, 1.0, 5).astype(str):
-        folder = "study_aneurysm"
+        folder = "/Users/pfaller/work/repos/FSGe/study_aneurysm"
         geo = "coarse"
         phi = "0.7"
 
@@ -374,7 +381,7 @@ def main():
 
 def main_param():
     # set study
-    folder = "study_aneurysm"
+    folder = "/Users/pfaller/work/repos/FSGe/study_aneurysm"
     geo = "coarse"
     phi = "0.7"
     
