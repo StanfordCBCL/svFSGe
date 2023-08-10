@@ -361,57 +361,39 @@ def plot_insult(out):
     vzc = 6
 
     z = np.linspace(0, lo, 101)
-    # azimuth = np.linspace(-np.pi, np.pi, 101)
-    theta = np.linspace(0.0, 2.0 * np.pi, 101)
+    azimuth = np.linspace(-np.pi, np.pi, 101)
 
     f_axi = np.exp(-np.power(np.abs((z - z_om) / z_od), vza))
-    azimuth = theta + np.pi
-    azimuth %= 2.0 * np.pi
-    azimuth -= np.pi
-    f_cir = np.exp(-np.power(np.abs(azimuth / (np.pi * theta_od)), vzc))
+    f_cir = np.exp(-np.power(np.abs((azimuth) / (np.pi * theta_od)), vzc))
 
-    xdata = [theta, z]
+    xdata = [azimuth * 180 / np.pi, z]
     ydata = [f_cir, f_axi]
-    xlabel = ["Vessel circumference", "Vessel length [mm]"]
+    xlabel = ["Vessel circumference [°]", "Vessel length [mm]"]
     ylabel = ["Elastin insult [-]"] * 2
-    xticks = [np.arange(0.0, 360.0, 45), [0, 7.5, 15]]
+    xticks = [np.arange(-180, 270, 90), [0, 7.5, 15]]
     yticks = [0, 1]
     title = ["Circumferential insult", "Axial insult"]
 
     nx = 2
     ny = 1
-    fig = plt.figure(figsize=(nx * 10, ny * 5), dpi=300)
-    ax = [plt.subplot2grid((ny, nx), (0, 0), projection='polar'),
-          plt.subplot2grid((ny, nx), (0, 1))]
+    fig, ax = plt.subplots(ny, nx, figsize=(nx * 10, ny * 5), dpi=300, sharex="col", sharey="row")
 
     for i in range(nx):
         ax[i].grid(True)
         ax[i].axhline(0, color='black', zorder=2)
         ax[i].plot(xdata[i], ydata[i])
         ax[i].set_title(title[i])
+        ax[i].set_xlim([np.min(xdata[i]), np.max(xdata[i])])
+        ax[i].set_ylim(yticks)
+        ax[i].set_xticks(xticks[i])
         if i == 0:
-            ax[i].set_theta_zero_location("N")
-            ax[i].set_theta_direction(-1)
-            ax[i].set_rlim(yticks)
-            ax[i].set_rticks(yticks)
-            ax[i].set_rlabel_position(20)
-            ax[i].set_thetagrids(xticks[i])
-        else:
-            ax[i].set_xlim([np.min(xdata[i]), np.max(xdata[i])])
-            ax[i].set_ylim(yticks)
-            ax[i].set_xticks(xticks[i])
-            ax[i].set_xticklabels([str(x) for x in xticks[i]])
-            ax[i].set_yticks(yticks)
-            ax[i].set_xlabel(xlabel[i])
             ax[i].set_ylabel(ylabel[i])
-
-    # plt.tight_layout()
+        ax[i].set_xticklabels([str(x) for x in xticks[i]])
+        ax[i].set_yticks(yticks)
+        ax[i].set_xlabel(xlabel[i])
+    plt.tight_layout()
     fig.savefig(os.path.join(out, "insult.png"), bbox_inches='tight')
     plt.close(fig)
-
-    import sys
-    sys.exit(0)
-    # pdb.set_trace()
 
 def main():
     # set study
