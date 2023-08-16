@@ -7,6 +7,7 @@ import vtk
 import os
 import shutil
 import argparse
+import subprocess
 from collections import defaultdict
 
 from vtk.util.numpy_support import numpy_to_vtk as n2v
@@ -669,33 +670,52 @@ class Mesh(Simulation):
                     if line < len(i_inlet) - 1:
                         file.write("\n")
 
-        # # generate quadratic mesh
-        # convert_quad = False
-        # if convert_quad:
-        #     # read quadratic mesh
-        #     f_quad = '/home/pfaller/work/repos/svFSI_examples_fork/05-struct/03-GR/mesh_tube_quad/mesh-complete.mesh.vtu'
-        #     vol = read_geo(f_quad).GetOutput()
+        if "quad" in self.p and self.p["quad"]:
+            fpath_lin = self.p["f_out"] + "_lin"
+            shutil.move(self.p["f_out"], fpath_lin)
+            os.makedirs(self.p["f_out"])
+            
+            surfaces = {"solid": ["start", "end", "interface", "outside"], "fluid": ["start", "end", "interface"]}
+            for f in ["solid", "fluid"]:
+                txt = "# numSpatialDim\n3\n\n# meshFilePath\n"
+                f_out = os.path.join("..", fpath_lin, f, "mesh-complete.mesh.vtu")
+                txt += f_out + "\n\n# faceFilesPaths\n"
+                for surf in surfaces[f]:
+                    f_out = os.path.join("..", fpath_lin, f, "mesh-surfaces", surf + ".vtp")
+                    txt += f_out + "\n"
 
-        #     # calculate cell centers
-        #     centers = vtk.vtkCellCenters()
-        #     centers.SetInputData(vol)
-        #     centers.Update()
-        #     centers.VertexCellsOn()
-        #     centers.CopyArraysOn()
-        #     points = v2n(centers.GetOutput().GetPoints().GetData())
+                fname = "convert.txt"
+                with open(os.path.join(self.p["f_out"], fname), "w") as text_file:
+                    text_file.write(txt)
 
-        #     # radial vector
-        #     rad = points
-        #     rad[:, 2] = 0
-        #     rad = (rad.T / np.linalg.norm(rad, axis=1)).T
+                # call quad conversion script (select y, 2)
+                exe = "/Users/pfaller/work/repos/useful_codes/gambitToVTK/bin/convertMesh.exe"
+                p = subprocess.call([exe, "convert.txt"], cwd=self.p["f_out"])
 
-        #     arr = n2v(rad)
-        #     arr.SetName('FIB_DIR')
-        #     vol.GetCellData().AddArray(arr)
+                os.makedirs(os.path.join(self.p["f_out"], f))
+                shutil.move(os.path.join(self.p["f_out"], "mesh-complete.mesh.vtu"), os.path.join(self.p["f_out"], f))
+                shutil.move(os.path.join(self.p["f_out"], "mesh-surfaces"), os.path.join(self.p["f_out"], f))
 
-        #     write_geo(f_quad, vol)
-        #     # write_geo('test.vtu', vol)
+            # add minimal mesh properties
+            for f in ["solid", "fluid"]:
+                props(os.path.join(self.p["f_out"], f, "mesh-complete.mesh.vtu"))
+                for surf in surfaces[f]:
+                    props(os.path.join(self.p["f_out"], f, "mesh-surfaces", surf + ".vtp"))
 
+def props(fn):
+    geo = read_geo(fn).GetOutput()
+
+    # add point coordinates (rest of cosy not necessary)
+    fiber = np.zeros((geo.GetNumberOfCells(), 3))
+    cosy = np.zeros((geo.GetNumberOfPoints(), 13))
+    cosy[:, 3:6] = v2n(geo.GetPoints().GetData())
+    
+    for a, n, out in zip([cosy, fiber], ["varWallProps", "FIB_DIR"], [geo.GetPointData(), geo.GetCellData()]):
+        arr = n2v(a)
+        arr.SetName(n)
+        out.AddArray(arr)
+
+    write_geo(fn, geo)
 
 def generate_mesh(f_params):
     mesh = Mesh(f_params)
