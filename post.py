@@ -131,7 +131,9 @@ def get_ids(pts_xyz):
     for loc, pt in locations.items():
         chk = [np.isclose(pts_cra[:, i], pt[i]) for i in range(3) if loc[i] != ":"]
         ids[loc] = np.where(np.logical_and.reduce(np.array(chk)))[0]
-        assert len(ids[loc]) > 0, "no points found: " + str(loc)
+        if len(ids[loc]) == 0:
+            print( "no points found: " + str(loc))
+            continue
 
         # sort according to coordinate
         if ":" in loc:
@@ -258,26 +260,32 @@ def plot_disp(data, coords, out, study):
     # axi locations: ["start", "mid", "end"]
     loc_axi = ["mid"]
 
-    # plot all points
+    # loop fields and plot
     fields = ["disp", "thick", "wss", "stim"]
-    for lr in loc_rad:
-        for la in loc_axi:
-            for f in fields:
-                loc_points = []
-                loc_lines = []
+    for f in fields:
+        # plot single points
+        for lr in loc_rad:
+            for la in loc_axi:
+                plot_points = [(lc, lr, la) for lc in loc_cir]
+                plot_single(data, coords, out, study, f, plot_points)
 
-                # loop circumferential locations
-                for lc in loc_cir:
-                    # plot single points
-                    loc_points += [(lc, lr, la)]
+        if study == "single":
+            # plot circumferential ring
+            for lr in loc_rad:
+                for la in loc_axi:
+                    plot_cir = [(":", lr, la)]
+                    plot_single(data, coords, out, study, f, plot_cir)
 
-                    # plot along axial lines
-                    loc_lines += [(lc, lr, ":")]
-                if study == "single":
-                    # plot circumferential ring
-                    plot_single(data, coords, out, study, f, [(":", lr, la)])
-                    plot_single(data, coords, out, study, f, loc_lines)
-                plot_single(data, coords, out, study, f, loc_points)
+            # plot along radius
+            for la in loc_axi:
+                plot_rad = [(lc, ":", la) for lc in loc_cir]
+                plot_single(data, coords, out, study, f, plot_rad)
+
+            # plot along axial lines
+            for lr in loc_rad:
+                plot_axi = [(lc, lr, ":") for lc in loc_cir]
+                plot_single(data, coords, out, study, f, plot_axi)
+
 
 def plot_single(data, coords, out, study, quant, locations):
     # plot text
@@ -299,11 +307,15 @@ def plot_single(data, coords, out, study, quant, locations):
     ny = len(ylabel)
 
     fig, ax = plt.subplots(ny, nx, figsize=(nx * 10, ny * 5), dpi=300, sharex="col", sharey="row")
+    if nx == 1 and ny == 1:
+        ax = [ax]
     for j, (n, res) in enumerate(data.items()):
         title = n.replace("&", "\&")
         for i in range(ny):
             # select plot position
-            if nx == 1 or ny == 1:
+            if nx == 1:
+                pos = i
+            elif ny == 1:
                 pos = j
             else:
                 pos = (i, j)
@@ -315,9 +327,10 @@ def plot_single(data, coords, out, study, quant, locations):
 
             # loop mesh positions
             for ic, lc in enumerate(locations):
+                # skip if no data available
                 if quant not in res[lc]:
+                    # print("quantity " + quant + " not found at location " + str(lc))
                     return
-                loc = list(lc)
 
                 # get data for y-axis
                 ydata = res[lc][quant].copy()
@@ -327,67 +340,59 @@ def plot_single(data, coords, out, study, quant, locations):
                     ydata = ydata.T[i]
                     
                 # get data for x-axis
+                fname =  quant
+                loc = list(lc)
                 if study == "single":
-                    if ":" in loc:
-                        xdata = coords[tuple(loc)].copy()
+                    if ":" in lc:
+                        # plotting along a coordinate axis
+                        xdata = coords[lc].copy()
                         dim = loc.index(":")
+                        loc.remove(":")
                         if dim == 0:
                             xlabel = "Vessel circumference [°]"
                             xdata *= 180 / np.pi
                             xticks = xdata[0::4].astype(int)
                         elif dim == 1:
-                            xlabel = "Vessel radius [°]"
-                            xticks = xdata.astype(str)
+                            xlabel = "Vessel radius [mm]"
+                            xticks = xdata
                         elif dim == 2:
                             xlabel = "Vessel length [mm]"
                             xticks = [0, 2, 4, 6, 7.5, 9, 11, 13, 15]
-                        loc.remove(":")
+                        dim_names = ["cir", "rad", "axi"]
+                        fname += "_" + dim_names[dim]
                     else:
+                        # plotting a single point over all load steps
                         xdata = np.arange(0, len(ydata))
                         xlabel = "Load step [-]"
-                        xticks = xdata[::2]
-
-                    # plot properties
-                    if len(locations) > 1:
-                        colors = [plt.cm.tab10(i) for i in [0, 1, 3, 2]]
-                        styles = ["-", "-", "-", ":"]
-                        styles_cir = ["-", "-", ":", "-"]
-
-                        # file name
-                        fname = "_".join([quant] + [str(l) for l in loc[1:]]) + ".png"
-                    else:
-                        # plot properties
-                        styles = ["-"]
-                        styles_cir = styles
-                        colors = ["#8C1515"]
-
-                        # file name
-                        dim_names = ["cir", "rad", "axi"]
-                        fname = "_".join([quant, dim_names[dim]] + [str(l) for l in loc]) + ".png"
+                        xticks = xdata
+                        fname += "_load"
                 elif study == "kski":
                     # get data for x-axis
                     xdata = np.linspace(0.0, 1.0, 5)
                     xlabel = "$K_{\\tau\sigma}$"
                     xticks = [0, 0.25, 0.5, 0.75, 1]
-
-                    # plot properties
-                    colors = [plt.cm.tab10(i) for i in [0, 1, 3, 2]]
-                    styles = ["-", "-", "-", ":"]
-                    styles_cir = ["-", "-", ":", "-"]
-                
-                    # file name
-                    fname = "_".join(["kski", quant] + [str(l) for l in loc[1:]]) + ".png"
                 else:
                     raise ValueError("unknown study: " + study)
-
-                # convert to degrees
-                if quant == "disp" and i == 0 and len(locations) > 1:
-                    stl = styles_cir[ic]
+                
+                # assemble filename
+                loc = np.array(loc).astype(str).tolist()
+                if len(locations) == 1:
+                    fname += "_".join([""] + loc)
+                    stl = "-"
+                    col = "#8C1515"
                 else:
-                    stl = styles[ic]
+                    # assume all locations provided are circumferential
+                    fname += "_".join([""] + loc[1:])
+                    colors = {j: plt.cm.tab10(i) for i, j in enumerate(range(0, 12, 3))}
+                    if quant == "disp" and i == 0 and len(locations) > 1:
+                        styles = {0: "-", 3: "-", 6: ":", 9: "-"}
+                    else:
+                        styles = {0: "-", 3: "-", 6: "-", 9: ":"}
+                    stl = styles[lc[0]]
+                    col = colors[lc[0]]
 
                 # plot!
-                ax[pos].plot(xdata, ydata, stl, color=colors[ic], linewidth=2)
+                ax[pos].plot(xdata, ydata, stl, color=col, linewidth=2)
             ax[pos].set_xticks(xticks)
             ax[pos].set_xticklabels([str(x) for x in xticks])
             ax[pos].set_xlim([np.min(xdata), np.max(xdata)])
@@ -398,8 +403,9 @@ def plot_single(data, coords, out, study, quant, locations):
             if j == 0:
                 ax[pos].set_ylabel(ylabel[i])
     plt.tight_layout()
-    fig.savefig(os.path.join(out, fname), bbox_inches='tight')
     print(fname)
+    fname += ".png"
+    fig.savefig(os.path.join(out, fname), bbox_inches='tight')
     plt.cla()
 
 def plot_insult(out):
@@ -521,10 +527,11 @@ def main_arg(folder):
 
     # post-process simulation (converged and unconverged)
     data = {}
-    # inp = {"FSGe": os.path.join(folder, "partitioned.json"),
-    #        "FSGe unvconverged": os.path.join(folder, "partitioned")}
-    inp = {"G&R1": folder,
-           "G&R2": folder}
+    if folder == "gr":
+        inp = {"G&R": folder}
+    else:
+        # inp = {"FSGe": os.path.join(folder, "partitioned.json")}
+        inp = {"FSGe unvconverged": os.path.join(folder, "partitioned")}
 
     # collect all results
     data = {}
