@@ -25,6 +25,52 @@ def cra2xyz(cra):
 def xyz2cra(xyz):
     return np.array([(np.arctan2(xyz[0], xyz[1]) + 2.0 * np.pi) % (2.0 * np.pi), np.sqrt(xyz[0]**2.0 + xyz[1]**2.0), xyz[2]])
 
+def get_wss(res, xyz0, xyz, out=False):
+    # Green-Lagrange strain
+    strain_gl = v2n(res.GetPointData().GetArray("Strain"))
+
+    # Cauchy-Green strain tensor
+    strain_c = 2.0 * strain_gl
+    strain_c[:,:3] += 1.0
+
+    # vtk stores symmetric 3x3 tensors in this form: XX, YY, ZZ, XY, YZ, XZ
+    indices = [(0, 0), (1, 1), (2, 2), (0, 1), (1, 2), (0, 2)]
+
+    # cir coordinate
+    cir = xyz2cra(xyz.T)[0]
+
+    # unit vectors in cir and rad directions 
+    ec = np.array([np.cos(cir), -np.sin(cir), np.zeros(len(xyz))]).T
+    er = np.array([np.sin(cir), np.cos(cir), np.zeros(len(xyz))]).T
+
+    # get loca cir and rad stretches
+    lambda_cir = np.zeros(len(xyz))
+    lambda_rad = np.zeros(len(xyz))
+    mat_c = np.zeros((3, 3))
+    for i in range(len(xyz)):
+        for j, (row, col) in enumerate(indices):
+            mat_c[row, col] = mat_c[col, row] = strain_c[i][j]
+        lambda_cir[i] = np.sqrt(np.dot(ec[i], np.dot(mat_c, ec[i])))
+        lambda_rad[i] = np.sqrt(np.dot(er[i], np.dot(mat_c, er[i])))
+    
+    # enter constants manually based on G&R simulation
+    q0 = 1000
+    mu = 4.0e-06
+    a0 = 0.64678
+
+    # radial coordinate
+    r0 = xyz2cra((xyz0).T)[1]
+
+    # estimate WSS in G&R from (80) in Latorre & Humphrey, CMAME (2020)
+    rad = r0 * lambda_cir - (r0 - a0) * lambda_rad
+
+    # this would be the exact radius, which is not used in the FEM code
+    rad_exact = xyz2cra((xyz).T)[1]
+    # print(np.max(np.abs(rad/rad_exact-1)))
+
+    # Poiseuille estimated wss (constants cancel out in stimulus function)
+    return 4.0 * mu * q0 / np.pi / rad ** 3.0
+
 def read_config(json):
     # read simulation config
     if not os.path.exists(json):
@@ -105,7 +151,7 @@ def get_results(results, pts, ids):
 
     # get results at all time steps
     for res in results:
-        extract_results(post, results[0], res, pts, ids)
+        extract_results(post, results[0], res, pts, ids, out = res == results[-1])
 
     # convert to numpy arrays
     for loc in post.keys():
@@ -114,7 +160,7 @@ def get_results(results, pts, ids):
 
     return post
 
-def extract_results(post, res0, res, pts, ids):
+def extract_results(post, res0, res, pts, ids, out=False):
     # get nodal displacements
     d = v2n(res.GetPointData().GetArray("Displacement"))
 
@@ -128,20 +174,13 @@ def extract_results(post, res0, res, pts, ids):
 
     # get nodal wall shear stress
     if res.GetPointData().HasArray("WSS"):
+        # FSGe stores WSS directly
         wss = v2n(res.GetPointData().GetArray("WSS"))
         wss0 = v2n(res0.GetPointData().GetArray("WSS"))
     else:
-        # enter constants manually based on G&R simulation
-        q0 = 1000
-        mu = 4.0e-06
-
-        # radial coordinate
-        rad = xyz2cra((pts + d).T)[1]
-        rad0 = xyz2cra((pts).T)[1]
-
-        # Poiseuille estimated wss (constants cancel out in stimulus function)
-        wss = 4.0 * mu * q0 / np.pi / rad ** 3.0
-        wss0 = 4.0 * mu * q0 / np.pi / rad0 ** 3.0
+        # G&R needs to estimate WSS from geometry
+        wss = get_wss(res, pts, pts + d, out)
+        wss0 = get_wss(res0, pts, pts)
     
     # get stimuli
     np.seterr(divide='ignore', invalid='ignore')
@@ -172,8 +211,7 @@ def extract_results(post, res0, res, pts, ids):
             post[loc]["wss"] += [wss[pt]]
         
         # extract stimuli
-        post[loc]["stim_all"] += [stim_all[pt]]
-        post[loc]["stim"] += [np.array([stim_sig[pt], stim_wss[pt]])]
+        post[loc]["stim"] += [np.array([stim_sig[pt], stim_wss[pt], stim_all[pt]])]
 
 def extract_scalar(scalar, res, pts, ids, mode):
     d = v2n(res.GetPointData().GetArray("Displacement"))
@@ -211,13 +249,17 @@ def post_process(f_out):
     return get_results(res, pts, ids), coords
 
 def plot_disp(data, coords, out, study):
-    # plot locations
+    # cir locations: o' clocks
     loc_cir = range(0, 12, 3)
-    loc_rad = ["in"] # "out"
-    loc_axi = ["mid"] # "start", "end"
+
+    # rad locations: ["in", "out"]
+    loc_rad = ["in", "out"]
+
+    # axi locations: ["start", "mid", "end"]
+    loc_axi = ["mid"]
 
     # plot all points
-    fields = ["disp", "thick", "wss", "stim", "stim_all"]
+    fields = ["disp", "thick", "wss", "stim"]
     for lr in loc_rad:
         for la in loc_axi:
             for f in fields:
@@ -247,10 +289,8 @@ def plot_single(data, coords, out, study, quant, locations):
         ylabel =[ "Thickness [mm]"]
     elif quant == "wss":
         ylabel = ["WSS [?]"]
-    elif quant == "stim_all":
-        ylabel = ["$K_{\\tau\sigma}$ [-]"]
     elif quant == "stim":
-        ylabel = ["Intramular stimulus $\Delta\sigma_I$ [-]", "WSS stimulus $\Delta\\tau_w$ [-]"]
+        ylabel = ["Intramular stimulus $\Delta\sigma_I$ [-]", "WSS stimulus $\Delta\\tau_w$ [-]", "Stimulus ratio $\Delta\sigma_I/\Delta\\tau_w$"]
     else:
         raise RuntimeError("Unknown quantity: " + quant)
 
@@ -275,12 +315,12 @@ def plot_single(data, coords, out, study, quant, locations):
 
             # loop mesh positions
             for ic, lc in enumerate(locations):
+                if quant not in res[lc]:
+                    return
                 loc = list(lc)
 
                 # get data for y-axis
                 ydata = res[lc][quant].copy()
-                if not len(ydata):
-                    return
                 if ":" in lc:
                     ydata = ydata[-1].T
                 if ny > 1:
@@ -359,7 +399,7 @@ def plot_single(data, coords, out, study, quant, locations):
                 ax[pos].set_ylabel(ylabel[i])
     plt.tight_layout()
     fig.savefig(os.path.join(out, fname), bbox_inches='tight')
-    # plt.close(fig)
+    print(fname)
     plt.cla()
 
 def plot_insult(out):
@@ -408,6 +448,8 @@ def plot_insult(out):
 def main():
     # set study
     for kski in np.linspace(0.0, 1.0, 5).astype(str):
+        print("\n\nplotting kski " + str(kski) + "\n")
+
         folder = "/Users/pfaller/work/repos/FSGe/study_aneurysm"
         geo = "coarse"
         phi = "0.7"
@@ -429,6 +471,7 @@ def main():
         plot_disp(data, coords, out, "single")
 
 def main_param():
+    print("\n\nplotting all kski\n")
     # set study
     folder = "/Users/pfaller/work/repos/FSGe/study_aneurysm"
     geo = "coarse"
@@ -478,9 +521,11 @@ def main_arg(folder):
 
     # post-process simulation (converged and unconverged)
     data = {}
-    inp = {"FSGe": os.path.join(folder, "partitioned.json"),
-           "FSGe unvconverged": os.path.join(folder, "partitioned")}
-    
+    # inp = {"FSGe": os.path.join(folder, "partitioned.json"),
+    #        "FSGe unvconverged": os.path.join(folder, "partitioned")}
+    inp = {"G&R1": folder,
+           "G&R2": folder}
+
     # collect all results
     data = {}
     for n, o in inp.items():
