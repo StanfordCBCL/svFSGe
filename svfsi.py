@@ -20,7 +20,7 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 
 from simulation import Simulation
-from cylinder import generate_mesh
+from cylinder import Mesh, generate_mesh
 from vtk_functions import read_geo, write_geo
 
 # names of fields in SimVascular
@@ -42,7 +42,7 @@ class svFSI(Simulation):
     svFSI base class (handles simulation runs)
     """
 
-    def __init__(self, f_params=None):
+    def __init__(self, f_params=None, load=False):
         # simulation parameters
         Simulation.__init__(self, f_params)
 
@@ -56,24 +56,20 @@ class svFSI(Simulation):
         self.p["paths"] = self.p["paths_" + plat]
 
         # output folder name
-        self.p["f_out"] = join(self.p["paths"]["root"], self.p["name"] + "_" + ct)
+        if load:
+            self.p["f_out"] = os.path.dirname(f_params)
+        else:
+            self.p["f_out"] = join(self.p["paths"]["root"], self.p["name"] + "_" + ct)
         self.p["f_sim"] = join(self.p["f_out"], "partitioned")
         self.p["f_conv"] = join(self.p["f_sim"], "converged")
         self.p["f_arx"] = join(self.p["f_out"], "archive")
 
-        # make folders
-        for f in self.p:
-            if f[:2] == "f_":
-                os.makedirs(self.p[f])
-
-        # copy configureation files
-        shutil.copytree(self.p["paths"]["in_petsc"], join(self.p["f_out"], "in_petsc"))
-
-        # generate and initialize mesh
-        self.mesh_p = generate_mesh(
-            join(self.p["paths"]["in_geo"], self.p["mesh"])
-        )
-        shutil.move("mesh_tube_fsi", join(self.p["f_out"], "mesh_tube_fsi"))
+        # generate and move files and folders
+        if load:
+            fm = os.path.join(os.path.dirname(f_params), "mesh_tube_fsi", "cylinder.json")
+            self.mesh_p = Mesh(fm).p
+        else:
+            self.setup_files()
 
         # intialize meshes
         self.fields = ["fluid", "solid", "mesh"]
@@ -129,6 +125,22 @@ class svFSI(Simulation):
         c1 = 2.0 * self.p["fluid"]["rho"] * self.p["fluid"]["q0"]
         c2 = self.mesh_p["r_inner"] * np.pi * self.p["fluid"]["mu"]
         self.p["re"] = c1 / c2
+
+    def setup_files(self):
+        # make folders
+        for f in self.p:
+            if f[:2] == "f_":
+                os.makedirs(self.p[f])
+
+        # copy configureation files
+        shutil.copytree(self.p["paths"]["in_petsc"], join(self.p["f_out"], "in_petsc"))
+
+        # generate and initialize mesh
+        self.mesh_p = generate_mesh(
+            join(self.p["paths"]["in_geo"], self.p["mesh"])
+        )
+        shutil.move("mesh_tube_fsi", join(self.p["f_out"], "mesh_tube_fsi"))
+
 
     def set_defaults(self):
         pass
