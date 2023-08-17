@@ -16,6 +16,8 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 
 from svfsi import svFSI, sv_names
 
+from utilities import QRfiltering_mod
+
 
 class FSG(svFSI):
     """
@@ -137,7 +139,7 @@ class FSG(svFSI):
 
         n_iter = [0]
         fig, ax = plt.subplots(
-            n_sol, 1, figsize=(20, 8), dpi=200, sharex="all", sharey="all"
+            n_sol, 1, figsize=(20, 4), dpi=200, sharex="all", sharey="all"
         )
         for i, name in enumerate(self.err.keys()):
             # get_axis handle
@@ -273,7 +275,7 @@ class FSG(svFSI):
         self.coup_omega("disp", i, t, n)
         if not self.coup_converged(n):
             # no IQN-ILS update during preloading or first time step
-            if t<= 1:
+            if (t<= 1 and n < 5):# or n == 0:
                 self.coup_relax("solid", "disp", i, t, n)
             else:
                 # maximum number of time steps used in IQN-ILS
@@ -284,29 +286,22 @@ class FSG(svFSI):
                 self.mat_W = self.mat_W[-nq:]
 
                 # remove linearly dependent vectors
-                while True:
-                    # QR decomposition
-                    _, rr = np.linalg.qr(np.array(self.mat_V[:nq]).T)
-
-                    # tolerance for redundant vectors
-                    i_eps = np.where(
-                        np.abs(np.diag(rr)) < self.p["coup"]["iqn_ils_eps"]
-                    )[0]
-                    if not np.any(i_eps):
-                        break
-
-                    print("filtering " + str(len(i_eps)) + " time steps")
-                    for i in reversed(i_eps):
-                        self.mat_V.pop(i)
-                        self.mat_W.pop(i)
+                tmp_V = np.array(self.mat_V).T
+                tmp_W = np.array(self.mat_W).T
+                eps = self.p["coup"]["iqn_ils_eps"]
+                qq, rr, tmp_V, tmp_W = QRfiltering_mod(tmp_V, tmp_W, eps)
 
                 # solve for coefficients
-                bb = np.linalg.solve(rr.T, -np.dot(np.array(self.mat_V), self.res[-1]))
-                cc = np.linalg.solve(rr, bb)
+                ss = np.dot(np.transpose(qq), -self.res[-1])
+                cc = np.linalg.solve(rr, ss)
 
                 # update
-                vec_new = dtk + np.dot(np.array(self.mat_W).T, cc)
+                vec_new = dtk + np.dot(tmp_W, cc)
                 self.curr.add(("solid", "disp", "int"), vec_new.reshape((-1, 3)))
+
+                # store matrices
+                self.mat_V = tmp_V.T.tolist()
+                self.mat_W = tmp_W.T.tolist()
         else:
             return True
 
@@ -443,7 +438,7 @@ class FSG(svFSI):
             err = 1.0
         else:
             # inf-norm on residual displacement L2-norm
-            err = np.max(np.linalg.norm(self.res[-1].reshape((-1, 3)), axis=1))
+            err = np.mean(np.linalg.norm(self.res[-1].reshape((-1, 3)), axis=1))
 
         # start a new sub-list for new load step
         if n == 0:
