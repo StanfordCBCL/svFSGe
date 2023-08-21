@@ -25,33 +25,38 @@ def cra2xyz(cra):
 def xyz2cra(xyz):
     return np.array([(np.arctan2(xyz[0], xyz[1]) + 2.0 * np.pi) % (2.0 * np.pi), np.sqrt(xyz[0]**2.0 + xyz[1]**2.0), xyz[2]])
 
-def get_wss(res, xyz0, xyz, out=False):
-    # Green-Lagrange strain
-    strain_gl = v2n(res.GetPointData().GetArray("Strain"))
-
-    # Cauchy-Green strain tensor
-    strain_c = 2.0 * strain_gl
-    strain_c[:,:3] += 1.0
-
+def ten_xyz2cra(xyz, ten_xyz):
     # vtk stores symmetric 3x3 tensors in this form: XX, YY, ZZ, XY, YZ, XZ
     indices = [(0, 0), (1, 1), (2, 2), (0, 1), (1, 2), (0, 2)]
 
     # cir coordinate
     cir = xyz2cra(xyz.T)[0]
 
-    # unit vectors in cir and rad directions 
-    ec = np.array([np.cos(cir), -np.sin(cir), np.zeros(len(xyz))]).T
-    er = np.array([np.sin(cir), np.cos(cir), np.zeros(len(xyz))]).T
+    # unit vectors in cir, rad, axi directions 
+    unit = [np.array([np.cos(cir), -np.sin(cir), np.zeros(len(xyz))]).T,
+            np.array([np.sin(cir), np.cos(cir), np.zeros(len(xyz))]).T,
+            np.array([[0, 0, 1]] * len(xyz))]
 
-    # get loca cir and rad stretches
-    lambda_cir = np.zeros(len(xyz))
-    lambda_rad = np.zeros(len(xyz))
+    # transform tensor to cir, rad, axi
+    ten_cra = np.zeros(xyz.shape)
     mat_c = np.zeros((3, 3))
     for i in range(len(xyz)):
         for j, (row, col) in enumerate(indices):
-            mat_c[row, col] = mat_c[col, row] = strain_c[i][j]
-        lambda_cir[i] = np.sqrt(np.dot(ec[i], np.dot(mat_c, ec[i])))
-        lambda_rad[i] = np.sqrt(np.dot(er[i], np.dot(mat_c, er[i])))
+            mat_c[row, col] = mat_c[col, row] = ten_xyz[i][j]
+        for j in range(3):
+            ten_cra[i, j] = np.dot(unit[j][i], np.dot(mat_c, unit[j][i]))
+    return ten_cra
+
+def get_wss(res, xyz0, xyz, out=False):
+    # Green-Lagrange strain tensor
+    strain_gl = v2n(res.GetPointData().GetArray("Strain"))
+
+    # Cauchy-Green strain tensor
+    strain_c_xyz = 2.0 * strain_gl
+    strain_c_xyz[:,:3] += 1.0
+
+    # convert strain tensor to cylindrical coordinates
+    strain_c_cra = ten_xyz2cra(xyz, strain_c_xyz)
     
     # enter constants manually based on G&R simulation
     q0 = 1000
@@ -62,7 +67,7 @@ def get_wss(res, xyz0, xyz, out=False):
     r0 = xyz2cra((xyz0).T)[1]
 
     # estimate WSS in G&R from (80) in Latorre & Humphrey, CMAME (2020)
-    rad = r0 * lambda_cir - (r0 - a0) * lambda_rad
+    rad = r0 * np.sqrt(strain_c_cra[:, 0]) - (r0 - a0) * np.sqrt(strain_c_cra[:, 1])
 
     # this would be the exact radius, which is not used in the FEM code
     rad_exact = xyz2cra((xyz).T)[1]
@@ -166,9 +171,16 @@ def extract_results(post, res0, res, pts, ids, out=False):
     # get nodal displacements
     d = v2n(res.GetPointData().GetArray("Displacement"))
 
+    # jacobian 
+    jac = v2n(res.GetPointData().GetArray("Jacobian"))
+
     # Cauchy stress
     sig = v2n(res.GetPointData().GetArray("Cauchy_stress"))
     sig0 = v2n(res0.GetPointData().GetArray("Cauchy_stress"))
+
+    # 2PK stress
+    pk2_xyz = v2n(res.GetPointData().GetArray("Stress"))
+    pk2_cra = ten_xyz2cra(pts, pk2_xyz)
 
     # stress invariant
     trace = np.sum(sig[:,:3], axis=1) / 3
@@ -199,10 +211,15 @@ def extract_results(post, res0, res, pts, ids, out=False):
         diff[0] %= np.pi * 2.0
         diff[0] -= np.pi
 
-        # store displacements
+        # store values
         post[loc]["disp"] += [diff]
+        post[loc]["jac"] += [jac[pt]]
+        post[loc]["pk2"] += [pk2_cra[pt].T]
         
-        # extract thickness and wss
+        # extract stimuli
+        post[loc]["stim"] += [np.array([stim_sig[pt], stim_wss[pt], stim_all[pt]])]
+        
+        # extract thickness and wss (only on interface)
         if loc[1] == "in":
             dloc = (loc[0], "out", loc[2])
 
@@ -211,9 +228,6 @@ def extract_results(post, res0, res, pts, ids, out=False):
 
             post[loc]["thick"] += [np.linalg.norm((d1 - d2).T, axis=0)]
             post[loc]["wss"] += [wss[pt]]
-        
-        # extract stimuli
-        post[loc]["stim"] += [np.array([stim_sig[pt], stim_wss[pt], stim_all[pt]])]
 
 def extract_scalar(scalar, res, pts, ids, mode):
     d = v2n(res.GetPointData().GetArray("Displacement"))
@@ -261,7 +275,7 @@ def plot_disp(data, coords, out, study):
     loc_axi = ["mid"]
 
     # loop fields and plot
-    fields = ["disp", "thick", "wss", "stim"]
+    fields = ["disp", "thick", "wss", "stim", "jac", "pk2"]
     for f in fields:
         # plot single points
         for lr in loc_rad:
@@ -298,7 +312,15 @@ def plot_single(data, coords, out, study, quant, locations):
     elif quant == "wss":
         ylabel = ["WSS [?]"]
     elif quant == "stim":
-        ylabel = ["Intramular stimulus $\Delta\sigma_I$ [-]", "WSS stimulus $\Delta\\tau_w$ [-]", "Stimulus ratio $\Delta\sigma_I/\Delta\\tau_w$"]
+        ylabel = ["Intramular stimulus $\Delta\sigma_I$ [-]", 
+                  "WSS stimulus $\Delta\\tau_w$ [-]", 
+                  "Stimulus ratio $\Delta\sigma_I/\Delta\\tau_w$"]
+    elif quant == "jac":
+        ylabel = ["Jacobian [-]"]
+    elif quant == "pk2":
+        ylabel = ["Cir. 2PK Stress [kPa]",
+                  "Rad. 2PK Stress [kPa]",
+                  "Axi. 2PK Stress [kPa]"]  
     else:
         raise RuntimeError("Unknown quantity: " + quant)
 
@@ -320,13 +342,9 @@ def plot_single(data, coords, out, study, quant, locations):
             else:
                 pos = (i, j)
 
-            # plot lines
-            ax[pos].grid(True)
-            if quant != "thick":
-                ax[pos].axhline(0, color='black', zorder=2)
-
             # loop mesh positions
-            for ic, lc in enumerate(locations):
+            hline = False
+            for lc in locations:
                 # skip if no data available
                 if quant not in res[lc]:
                     # print("quantity " + quant + " not found at location " + str(lc))
@@ -338,6 +356,9 @@ def plot_single(data, coords, out, study, quant, locations):
                     ydata = ydata[-1].T
                 if ny > 1:
                     ydata = ydata.T[i]
+                
+                # check if hline should be plotted
+                hline = np.any(ydata <= 0.0) and np.any(ydata >= 0.0)
                     
                 # get data for x-axis
                 fname =  quant
@@ -351,7 +372,8 @@ def plot_single(data, coords, out, study, quant, locations):
                         if dim == 0:
                             xlabel = "Vessel circumference [°]"
                             xdata *= 180 / np.pi
-                            xticks = xdata[0::4].astype(int)
+                            xdata -= 180
+                            xticks = np.arange(-180, 180, 45).astype(int)
                         elif dim == 1:
                             xlabel = "Vessel radius [mm]"
                             xticks = xdata
@@ -384,7 +406,7 @@ def plot_single(data, coords, out, study, quant, locations):
                     # assume all locations provided are circumferential
                     fname += "_".join([""] + loc[1:])
                     colors = {j: plt.cm.tab10(i) for i, j in enumerate(range(0, 12, 3))}
-                    if quant == "disp" and i == 0 and len(locations) > 1:
+                    if quant == "disp" and i == 0:
                         styles = {0: "-", 3: "-", 6: ":", 9: "-"}
                     else:
                         styles = {0: "-", 3: "-", 6: "-", 9: ":"}
@@ -392,7 +414,15 @@ def plot_single(data, coords, out, study, quant, locations):
                     col = colors[lc[0]]
 
                 # plot!
-                ax[pos].plot(xdata, ydata, stl, color=col, linewidth=2)
+                try:
+                    ax[pos].plot(xdata, ydata, stl, color=col, linewidth=2)
+                except:
+                    pdb.set_trace()
+
+            # plot lines
+            ax[pos].grid(True)
+            if hline:
+                ax[pos].axhline(0, color='black', zorder=2)
             ax[pos].set_xticks(xticks)
             ax[pos].set_xticklabels([str(x) for x in xticks])
             ax[pos].set_xlim([np.min(xdata), np.max(xdata)])
@@ -409,18 +439,23 @@ def plot_single(data, coords, out, study, quant, locations):
     plt.cla()
 
 def plot_insult(out):
+    # spatial parameters
     lo = 15.0
-    z_om = 0.5 * lo
-    z_od = 0.25 * lo
-    theta_od = 0.55
+    z_om = lo/2.0
+    z_od = lo/4.0
+
+    theta_od = 0.9
     vza = 2
-    vzc = 6
+    vzc = 2
+    na = 0.0
+    nc = 1.0
 
     z = np.linspace(0, lo, 101)
     azimuth = np.linspace(-np.pi, np.pi, 101)
 
-    f_axi = np.exp(-np.power(np.abs((z - z_om) / z_od), vza))
-    f_cir = np.exp(-np.power(np.abs((azimuth) / (np.pi * theta_od)), vzc))
+    f_axi = (na + np.exp(-np.power(np.abs((z - z_om) / z_od), vza))) / (1.0 + na)
+    # f_cir = (nc + np.exp(-np.power(np.abs((azimuth) / (np.pi * theta_od)), vzc))) / (1.0 + nc)
+    f_cir = (nc + (1.0 + np.cos(np.power(azimuth / np.pi, vzc) * np.pi)) / 2.0) / (1.0 + nc)
 
     xdata = [azimuth * 180 / np.pi, z]
     ydata = [f_cir, f_axi]
@@ -453,28 +488,29 @@ def plot_insult(out):
 
 def main():
     # set study
-    for kski in np.linspace(0.0, 1.0, 5).astype(str):
-        print("\n\nplotting kski " + str(kski) + "\n")
+    # for kski in np.linspace(0.0, 1.0, 5).astype(str):
+    # print("\n\nplotting kski " + str(kski) + "\n")
 
-        folder = "/Users/pfaller/work/repos/FSGe/study_aneurysm"
-        geo = "coarse"
-        phi = "0.7"
+    # folder = "/Users/pfaller/work/repos/FSGe/study_aneurysm"
+    # geo = "coarse"
+    # phi = "0.7"
 
-        # define paths
-        fpath = os.path.join(folder, geo,  "phi_" + phi, "kski_" + kski)
-        inp = {"G&R": os.path.join(fpath, "gr"),
-            "FSGe": os.path.join(fpath, "partitioned", "partitioned.json")}
-        out = os.path.join(fpath, "comparison")
+    # define paths
+    # fpath = os.path.join(folder, geo,  "phi_" + phi, "kski_" + kski)
+    fpath = "/Users/pfaller/work/repos/FSG/new_study_aneurysm/coarse_kski_1.0"
+    inp = {"G&R": os.path.join(fpath, "gr"),
+        "FSGe": os.path.join(fpath, "partitioned", "partitioned.json")}
+    out = os.path.join(fpath, "comparison")
 
-        # create output folder
-        os.makedirs(out, exist_ok=True)
+    # create output folder
+    os.makedirs(out, exist_ok=True)
 
-        # collect all results
-        data = {}
-        for n, o in inp.items():
-            data[n], coords = post_process(o)
-        
-        plot_disp(data, coords, out, "single")
+    # collect all results
+    data = {}
+    for n, o in inp.items():
+        data[n], coords = post_process(o)
+    
+    plot_disp(data, coords, out, "single")
 
 def main_param():
     print("\n\nplotting all kski\n")
@@ -530,8 +566,8 @@ def main_arg(folder):
     if folder == "gr":
         inp = {"G&R": folder}
     else:
-        # inp = {"FSGe": os.path.join(folder, "partitioned.json")}
-        inp = {"FSGe unvconverged": os.path.join(folder, "partitioned")}
+        inp = {"FSGe": os.path.join(folder, "partitioned.json")}
+        # inp = {"FSGe unvconverged": os.path.join(folder, "partitioned")}
 
     # collect all results
     data = {}
@@ -542,11 +578,16 @@ def main_arg(folder):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Post-process FSGe simulation")
-    parser.add_argument("out", nargs='?', default=None, help="svFSI output folder")
+    parser.add_argument("out", nargs='?', default="None", help="svFSI output folder")
+    parser.add_argument('-insult', action='store_true', help="plot insult")
     args = parser.parse_args()
-    if not args.out:
-        main_param()
-        main()
+
+    if args.insult:
+        plot_insult(".")
     else:
-        main_arg(args.out)
+        if not args.out:
+            # main_param()
+            main()
+        else:
+            main_arg(args.out)
 
