@@ -47,35 +47,6 @@ def ten_xyz2cra(xyz, ten_xyz):
             ten_cra[i, j] = np.dot(unit[j][i], np.dot(mat_c, unit[j][i]))
     return ten_cra
 
-def get_wss(res, xyz0, xyz, out=False):
-    # Green-Lagrange strain tensor
-    strain_gl = v2n(res.GetPointData().GetArray("Strain"))
-
-    # Cauchy-Green strain tensor
-    strain_c_xyz = 2.0 * strain_gl
-    strain_c_xyz[:,:3] += 1.0
-
-    # convert strain tensor to cylindrical coordinates
-    strain_c_cra = ten_xyz2cra(xyz, strain_c_xyz)
-    
-    # enter constants manually based on G&R simulation
-    q0 = 1000
-    mu = 4.0e-06
-    a0 = 0.64678
-
-    # radial coordinate
-    r0 = xyz2cra((xyz0).T)[1]
-
-    # estimate WSS in G&R from (80) in Latorre & Humphrey, CMAME (2020)
-    rad = r0 * np.sqrt(strain_c_cra[:, 0]) - (r0 - a0) * np.sqrt(strain_c_cra[:, 1])
-
-    # this would be the exact radius, which is not used in the FEM code
-    rad_exact = xyz2cra((xyz).T)[1]
-    # print(np.max(np.abs(rad/rad_exact-1)))
-
-    # Poiseuille estimated wss (constants cancel out in stimulus function)
-    return 4.0 * mu * q0 / np.pi / rad ** 3.0
-
 def read_config(json):
     # read simulation config
     if not os.path.exists(json):
@@ -142,11 +113,18 @@ def get_ids(pts_xyz):
 
         # sort according to coordinate
         if ":" in loc:
-            crd = pts_cra[ids[loc], list(loc).index(":")]
+            dim = list(loc).index(":")
+            crd = pts_cra[ids[loc], dim]
             sort = np.argsort(crd)
             ids[loc] = ids[loc][sort]
             coords[loc] = crd[sort]
             assert len(np.unique(crd)) == len(crd), "coordinates not unique: " + str(crd)
+            
+            # # limit angle to [-pi, pi)
+            # if dim == 0:
+            #     coords[loc] += np.pi
+            #     coords[loc] %= np.pi * 2.0
+            #     coords[loc] -= np.pi
 
     return ids, coords
 
@@ -171,35 +149,20 @@ def extract_results(post, res0, res, pts, ids, out=False):
     # get nodal displacements
     d = v2n(res.GetPointData().GetArray("Displacement"))
 
+    # get G&R output
+    gr = v2n(res.GetPointData().GetArray("GR"))
+
     # jacobian 
     jac = v2n(res.GetPointData().GetArray("Jacobian"))
-
-    # Cauchy stress
-    sig = v2n(res.GetPointData().GetArray("Cauchy_stress"))
-    sig0 = v2n(res0.GetPointData().GetArray("Cauchy_stress"))
 
     # 2PK stress
     pk2_xyz = v2n(res.GetPointData().GetArray("Stress"))
     pk2_cra = ten_xyz2cra(pts, pk2_xyz)
 
-    # stress invariant
-    trace = np.sum(sig[:,:3], axis=1) / 3
-    trace0 = np.sum(sig0[:,:3], axis=1) / 3
-
-    # get nodal wall shear stress
-    if res.GetPointData().HasArray("WSS"):
-        # FSGe stores WSS directly
-        wss = v2n(res.GetPointData().GetArray("WSS"))
-        wss0 = v2n(res0.GetPointData().GetArray("WSS"))
-    else:
-        # G&R needs to estimate WSS from geometry
-        wss = get_wss(res, pts, pts + d, out)
-        wss0 = get_wss(res0, pts, pts)
-    
     # get stimuli
     np.seterr(divide='ignore', invalid='ignore')
-    stim_wss = wss / wss0 - 1.0
-    stim_sig = trace / trace0 - 1.0
+    stim_wss = gr[:, 28] - 1.0
+    stim_sig = gr[:, 26] / gr[:, 1] - 1.0
     stim_all = stim_sig / stim_wss
 
     for loc, pt in ids.items():
@@ -215,6 +178,7 @@ def extract_results(post, res0, res, pts, ids, out=False):
         post[loc]["disp"] += [diff]
         post[loc]["jac"] += [jac[pt]]
         post[loc]["pk2"] += [pk2_cra[pt].T]
+        post[loc]["lagrange"] += [gr[pt, 29]]
         
         # extract stimuli
         post[loc]["stim"] += [np.array([stim_sig[pt], stim_wss[pt], stim_all[pt]])]
@@ -227,7 +191,6 @@ def extract_results(post, res0, res, pts, ids, out=False):
             d2 = pts[ids[dloc]] + d[ids[dloc]]
 
             post[loc]["thick"] += [np.linalg.norm((d1 - d2).T, axis=0)]
-            post[loc]["wss"] += [wss[pt]]
 
 def extract_scalar(scalar, res, pts, ids, mode):
     d = v2n(res.GetPointData().GetArray("Displacement"))
@@ -241,16 +204,12 @@ def extract_scalar(scalar, res, pts, ids, mode):
 
 def post_process(f_out):
     # check if FSGe or conventional G&R results
-    if ".json" in f_out:
-        fsge = True
-        sim = read_config(f_out)
-        fname = os.path.join(sim.p['f_out'], "partitioned", "converged", "tube_*.vtu")
-    elif "partitioned" in f_out:
-        fsge = True
-        fname = os.path.join(f_out, "tube_*.vtu")
-    else:
+    if "gr" in f_out:
         fsge = False
         fname = os.path.join(f_out, "gr_*.vtu")
+    else:
+        fsge = True
+        fname = os.path.join(f_out, "tube_*.vtu")
     
     # read results from fike
     res = read_res(fname, fsge)
@@ -264,7 +223,7 @@ def post_process(f_out):
     # extract displacements
     return get_results(res, pts, ids), coords
 
-def plot_disp(data, coords, out, study):
+def plot_res(data, coords, out, study):
     # cir locations: o' clocks
     loc_cir = range(0, 12, 3)
 
@@ -275,8 +234,8 @@ def plot_disp(data, coords, out, study):
     loc_axi = ["mid"]
 
     # loop fields and plot
-    fields = ["disp", "thick", "wss", "stim", "jac", "pk2"]
-    for f in fields:
+    fields = ["disp", "thick", "stim", "jac", "pk2", "lagrange"]
+    for f in sorted(fields):
         # plot single points
         for lr in loc_rad:
             for la in loc_axi:
@@ -303,24 +262,26 @@ def plot_disp(data, coords, out, study):
 
 def plot_single(data, coords, out, study, quant, locations):
     # plot text
+    scale = 1.0
     if quant == "disp":
         ylabel = ["Cir. displacement $\Delta\\theta$ [°]",
                   "Rad. displacement $\Delta r$ [mm]",
                   "Axi. displacement $\Delta z$ [mm]"]
     elif quant == "thick":
-        ylabel =[ "Thickness [mm]"]
-    elif quant == "wss":
-        ylabel = ["WSS [?]"]
+        ylabel =[ "Thickness [$\mu$m]"]
+        scale = 1e3
     elif quant == "stim":
         ylabel = ["Intramular stimulus $\Delta\sigma_I$ [-]", 
                   "WSS stimulus $\Delta\\tau_w$ [-]", 
-                  "Stimulus ratio $\Delta\sigma_I/\Delta\\tau_w$"]
+                  "Stimulus ratio $K_{\\tau\sigma}$"]
     elif quant == "jac":
         ylabel = ["Jacobian [-]"]
     elif quant == "pk2":
         ylabel = ["Cir. 2PK Stress [kPa]",
                   "Rad. 2PK Stress [kPa]",
-                  "Axi. 2PK Stress [kPa]"]  
+                  "Axi. 2PK Stress [kPa]"]
+    elif quant == "lagrange":
+        ylabel = ["Lagrange multiplier $p$ [kPa]"]
     else:
         raise RuntimeError("Unknown quantity: " + quant)
 
@@ -356,6 +317,7 @@ def plot_single(data, coords, out, study, quant, locations):
                     ydata = ydata[-1].T
                 if ny > 1:
                     ydata = ydata.T[i]
+                ydata *= scale
                 
                 # check if hline should be plotted
                 hline = np.any(ydata <= 0.0) and np.any(ydata >= 0.0)
@@ -373,7 +335,8 @@ def plot_single(data, coords, out, study, quant, locations):
                             xlabel = "Vessel circumference [°]"
                             xdata *= 180 / np.pi
                             xdata -= 180
-                            xticks = np.arange(-180, 180, 45).astype(int)
+                            # xticks = np.arange(-180, 180, 45).astype(int)
+                            xticks = np.arange(0, 360, 45).astype(int)
                         elif dim == 1:
                             xlabel = "Vessel radius [mm]"
                             xticks = xdata
@@ -405,7 +368,7 @@ def plot_single(data, coords, out, study, quant, locations):
                 else:
                     # assume all locations provided are circumferential
                     fname += "_".join([""] + loc[1:])
-                    colors = {j: plt.cm.tab10(i) for i, j in enumerate(range(0, 12, 3))}
+                    colors = {j: plt.cm.tab10(i) for i, j in zip([0, 1, 3, 2], range(0, 12, 3))}
                     if quant == "disp" and i == 0:
                         styles = {0: "-", 3: "-", 6: ":", 9: "-"}
                     else:
@@ -438,54 +401,6 @@ def plot_single(data, coords, out, study, quant, locations):
     fig.savefig(os.path.join(out, fname), bbox_inches='tight')
     plt.cla()
 
-def plot_insult(out):
-    # spatial parameters
-    lo = 15.0
-    z_om = lo/2.0
-    z_od = lo/4.0
-
-    theta_od = 0.9
-    vza = 2
-    vzc = 2
-    na = 0.0
-    nc = 1.0
-
-    z = np.linspace(0, lo, 101)
-    azimuth = np.linspace(-np.pi, np.pi, 101)
-
-    f_axi = (na + np.exp(-np.power(np.abs((z - z_om) / z_od), vza))) / (1.0 + na)
-    # f_cir = (nc + np.exp(-np.power(np.abs((azimuth) / (np.pi * theta_od)), vzc))) / (1.0 + nc)
-    f_cir = (nc + (1.0 + np.cos(np.power(azimuth / np.pi, vzc) * np.pi)) / 2.0) / (1.0 + nc)
-
-    xdata = [azimuth * 180 / np.pi, z]
-    ydata = [f_cir, f_axi]
-    xlabel = ["Vessel circumference [°]", "Vessel length [mm]"]
-    ylabel = ["Elastin insult [-]"] * 2
-    xticks = [np.arange(-180, 270, 90), [0, 7.5, 15]]
-    yticks = [0, 1]
-    title = ["Circumferential insult", "Axial insult"]
-
-    nx = 2
-    ny = 1
-    fig, ax = plt.subplots(ny, nx, figsize=(nx * 10, ny * 5), dpi=300, sharex="col", sharey="row")
-
-    for i in range(nx):
-        ax[i].grid(True)
-        ax[i].axhline(0, color='black', zorder=2)
-        ax[i].plot(xdata[i], ydata[i])
-        ax[i].set_title(title[i])
-        ax[i].set_xlim([np.min(xdata[i]), np.max(xdata[i])])
-        ax[i].set_ylim(yticks)
-        ax[i].set_xticks(xticks[i])
-        if i == 0:
-            ax[i].set_ylabel(ylabel[i])
-        ax[i].set_xticklabels([str(x) for x in xticks[i]])
-        ax[i].set_yticks(yticks)
-        ax[i].set_xlabel(xlabel[i])
-    plt.tight_layout()
-    fig.savefig(os.path.join(out, "insult.png"), bbox_inches='tight')
-    plt.clf()
-
 def main():
     # set study
     # for kski in np.linspace(0.0, 1.0, 5).astype(str):
@@ -510,7 +425,7 @@ def main():
     for n, o in inp.items():
         data[n], coords = post_process(o)
     
-    plot_disp(data, coords, out, "single")
+    plot_res(data, coords, out, "single")
 
 def main_param():
     print("\n\nplotting all kski\n")
@@ -554,7 +469,7 @@ def main_param():
                     data_sorted[nam][loc][quant] += [data[k][nam][loc][quant][-1]]
                 data_sorted[nam][loc][quant] = np.array(data_sorted[nam][loc][quant])
 
-    plot_disp(data_sorted, coords, out, "kski")
+    plot_res(data_sorted, coords, out, "kski")
 
 def main_arg(folder):
     # define paths
@@ -566,28 +481,27 @@ def main_arg(folder):
     if folder == "gr":
         inp = {"G&R": folder}
     else:
-        inp = {"FSGe": os.path.join(folder, "partitioned.json")}
+        inp = {"FSGe": folder}
         # inp = {"FSGe unvconverged": os.path.join(folder, "partitioned")}
+    # inp = {"G&R KsKi=0.35": "study_kski/gr_kski_0.35/",
+    #        "G&R KsKi=1.0": "study_kski/gr_kski_1.0/",
+    #        "G&R KsKi=20.0": "study_kski/gr_kski_20.0/"}
 
     # collect all results
     data = {}
     for n, o in inp.items():
         data[n], coords = post_process(o)
     
-    plot_disp(data, coords, out, "single")
+    plot_res(data, coords, out, "single")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Post-process FSGe simulation")
     parser.add_argument("out", nargs='?', default="None", help="svFSI output folder")
-    parser.add_argument('-insult', action='store_true', help="plot insult")
     args = parser.parse_args()
 
-    if args.insult:
-        plot_insult(".")
+    if not args.out:
+        # main_param()
+        main()
     else:
-        if not args.out:
-            # main_param()
-            main()
-        else:
-            main_arg(args.out)
+        main_arg(args.out)
 
