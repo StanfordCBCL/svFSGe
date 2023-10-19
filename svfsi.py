@@ -34,6 +34,7 @@ sv_names = {
     "cauchy": "Cauchy_stress",
     "stress": "Stress",
     "strain": "Strain",
+    "gr": "GR"
 }
 
 
@@ -295,6 +296,7 @@ class svFSI(Simulation):
         props = v2n(solid.GetPointData().GetArray(n))
         props[:, 6] = self.curr.get(("solid", "wss", "vol"))
         props[:, 7] = t + 1
+        # props[:, 8] = self.curr.get(("solid", "intramural", "vol"))
         add_array(solid, props, n)
 
         # write geometry to file
@@ -369,14 +371,14 @@ class svFSI(Simulation):
         i_str = str(i).zfill(3)
         if domain == "solid":
             # read current iteration
-            fields = ["disp", "jac", "cauchy", "stress", "strain"]
+            fields = ["disp", "jac", "cauchy", "stress", "strain", "gr"]
             src = [fname + str(self.p["n_max"][domain] * i).zfill(3) + ".vtu"]
         elif domain == "fluid":
             # read converged steady state flow
             fields = ["velo", "wss", "press"]
 
             # read n_fluid last time steps
-            n_fluid = 2
+            n_fluid = 1
             src = [
                 fname + str(self.p["n_max"][domain] * i - j).zfill(3) + ".vtu"
                 for j in range(n_fluid)
@@ -410,13 +412,21 @@ class svFSI(Simulation):
                 if f == "wss":
                     sol = []
                     for r in res:
-                        # map point data to cell data
-                        c2p = vtk.vtkCellDataToPointData()
-                        c2p.SetInputData(r)
-                        c2p.Update()
+                        n_smooth = 3
+                        c2p = r
+                        for _ in range(n_smooth):
+                            # map point data to cell data
+                            p2c = vtk.vtkPointDataToCellData()
+                            p2c.SetInputData(c2p)
+                            p2c.Update()
+
+                            # map cell data to point data
+                            c2p = vtk.vtkCellDataToPointData()
+                            c2p.SetInputData(p2c)
+                            c2p.Update()
 
                         # get element-wise wss maped to point data
-                        sol += [v2n(c2p.GetOutput().GetPointData().GetArray("E_WSS"))]
+                        sol += [v2n(c2p.GetOutput().GetPointData().GetArray("WSS"))]
                     sol = np.mean(np.array(sol), axis=0)
 
                     # points on fluid interface
@@ -429,12 +439,12 @@ class svFSI(Simulation):
                     # sol = v2n(res.GetPointData().GetArray(sv_names[f]))
                     # self.curr.add((phys, 'pwss', 'int'), np.linalg.norm(sol[map_int], axis=1))
                 else:
-                    sol = np.mean(
-                        np.array(
-                            [v2n(r.GetPointData().GetArray(sv_names[f])) for r in res]
-                        ),
-                        axis=0,
-                    )
+                    extr = []
+                    for r in res:
+                        if not r.GetPointData().HasArray(sv_names[f]):
+                            raise ValueError("no array in PointData: " + sv_names[f])
+                        extr += [v2n(r.GetPointData().GetArray(sv_names[f]))]
+                    sol = np.mean(np.array(extr), axis=0)
                     self.curr.add((phys, f, "vol"), sol)
 
         # archive input
@@ -607,6 +617,7 @@ class Solution:
             "cauchy": np.zeros(dim_ten) * np.nan,
             "stress": np.zeros(dim_ten) * np.nan,
             "strain": np.zeros(dim_ten) * np.nan,
+            "gr": np.ones((dim_sca, 50)) * np.nan
         }
         self.fields = self.zero.keys()
 
@@ -637,7 +648,7 @@ class Solution:
         d, f, p = kind
 
         map_v = self.sim.map(((p, d), ("vol", "tube")))
-        if f in ["disp", "velo", "press", "jac", "cauchy", "stress", "strain"]:
+        if f in ["disp", "velo", "press", "jac", "cauchy", "stress", "strain", "gr"]:
             self.sol[f][map_v] = deepcopy(sol)
         elif "wss" in f:
             # wss in tube volume
