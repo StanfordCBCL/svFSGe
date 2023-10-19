@@ -160,10 +160,7 @@ def extract_results(post, res0, res, pts, ids, out=False):
     pk2_cra = ten_xyz2cra(pts, pk2_xyz)
 
     # get stimuli
-    np.seterr(divide='ignore', invalid='ignore')
-    stim_wss = gr[:, 28] - 1.0
-    stim_sig = gr[:, 26] / gr[:, 1] - 1.0
-    stim_all = stim_sig / stim_wss
+    stim = gr[:, 31:35]
 
     for loc, pt in ids.items():
         # displacement in polar coordinates
@@ -178,10 +175,11 @@ def extract_results(post, res0, res, pts, ids, out=False):
         post[loc]["disp"] += [diff]
         post[loc]["jac"] += [jac[pt]]
         post[loc]["pk2"] += [pk2_cra[pt].T]
-        post[loc]["lagrange"] += [gr[pt, 29]]
+        post[loc]["lagrange"] += [gr[pt, 30]]
+        post[loc]["phic"] += [gr[pt, 37]]
         
         # extract stimuli
-        post[loc]["stim"] += [np.array([stim_sig[pt], stim_wss[pt], stim_all[pt]])]
+        post[loc]["stim"] += [stim[pt].T]
         
         # extract thickness and wss (only on interface)
         if loc[1] == "in":
@@ -214,6 +212,10 @@ def post_process(f_out):
     # read results from fike
     res = read_res(fname, fsge)
 
+    # double up results if there's only one time step
+    if len(res) == 1:
+        res *= 2
+
     # extract points
     pts = v2n(res[0].GetPoints().GetData())
 
@@ -234,7 +236,7 @@ def plot_res(data, coords, out, study):
     loc_axi = ["mid"]
 
     # loop fields and plot
-    fields = ["disp", "thick", "stim", "jac", "pk2", "lagrange"]
+    fields = ["disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]
     for f in sorted(fields):
         # plot single points
         for lr in loc_rad:
@@ -271,9 +273,10 @@ def plot_single(data, coords, out, study, quant, locations):
         ylabel =[ "Thickness [$\mu$m]"]
         scale = 1e3
     elif quant == "stim":
-        ylabel = ["Intramular stimulus $\Delta\sigma_I$ [-]", 
-                  "WSS stimulus $\Delta\\tau_w$ [-]", 
-                  "Stimulus ratio $K_{\\tau\sigma}$"]
+        ylabel = ["WSS stimulus $\Delta\\tau_w$ [-]",
+                  "Intramular stimulus $\Delta\sigma_I$ [-]",
+                  "Stimulus ratio $K_{\\tau\sigma}$ [-]",
+                  "Residual $\Delta\sigma_I-K_{\\tau\sigma}\Delta\\tau_w$ [-]"]
     elif quant == "jac":
         ylabel = ["Jacobian [-]"]
     elif quant == "pk2":
@@ -282,6 +285,8 @@ def plot_single(data, coords, out, study, quant, locations):
                   "Axi. 2PK Stress [kPa]"]
     elif quant == "lagrange":
         ylabel = ["Lagrange multiplier $p$ [kPa]"]
+    elif quant == "phic":
+        ylabel = ["Collagen mass fraction $\phi^c_h$ [-]"]
     else:
         raise RuntimeError("Unknown quantity: " + quant)
 
@@ -323,7 +328,7 @@ def plot_single(data, coords, out, study, quant, locations):
                 hline = np.any(ydata <= 0.0) and np.any(ydata >= 0.0)
                     
                 # get data for x-axis
-                fname =  quant
+                fname = quant
                 loc = list(lc)
                 if study == "single":
                     if ":" in lc:
@@ -347,9 +352,14 @@ def plot_single(data, coords, out, study, quant, locations):
                         fname += "_" + dim_names[dim]
                     else:
                         # plotting a single point over all load steps
-                        xdata = np.arange(0, len(ydata))
+                        nd = len(ydata)
+                        n10 = int(np.log(nd) / np.log(10))
+                        xdata = np.arange(0, nd)
                         xlabel = "Load step [-]"
-                        xticks = xdata
+                        if nd <= 10:
+                            xticks = np.arange(0, nd, 1)
+                        else:
+                            xticks = np.arange(0, nd, nd // 10**n10 * 10**(n10 - 1))
                         fname += "_load"
                 elif study == "kski":
                     # get data for x-axis
@@ -483,9 +493,8 @@ def main_arg(folder):
     else:
         inp = {"FSGe": folder}
         # inp = {"FSGe unvconverged": os.path.join(folder, "partitioned")}
-    # inp = {"G&R KsKi=0.35": "study_kski/gr_kski_0.35/",
-    #        "G&R KsKi=1.0": "study_kski/gr_kski_1.0/",
-    #        "G&R KsKi=20.0": "study_kski/gr_kski_20.0/"}
+    # inp = {"Preload penalty": "study_3dof_4dof/gr_4dof_preload_penalty/",
+    #        "Preload Lagrange": "study_3dof_4dof/gr_4dof_preload_lagrange/"}
 
     # collect all results
     data = {}
