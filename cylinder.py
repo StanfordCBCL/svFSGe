@@ -119,6 +119,8 @@ class Mesh(Simulation):
             self.f["axi"] = lambda z: spacing(z, self.p["adapt"])
         elif "exp" in self.p:
             self.f['axi'] = lambda z: spacing_var(z, self.p["exp"])
+            # self.f['cir'] = lambda z: (spacing_var((z*2)%1, self.p["exp"]) + (z>=0.5)) * 0.5
+            self.f["cir"] = lambda z: z
         # self.f['axi'] = lambda z: np.sqrt(z)
         # self.f['axi'] = lambda z: z**2
         # self.f['axi'] = lambda z: np.log(z + 1) / np.log(2)
@@ -272,7 +274,7 @@ class Mesh(Simulation):
 
                     # cylindrical coordinate system
                     axi = self.p["height"] * self.f["axi"](ia / self.p["n_axi"])
-                    cir = 2 * np.pi * ic / self.p["n_cell_cir"] / self.p["n_seg"]
+                    cir = 2 * np.pi * self.f["cir"](ic / self.p["n_cell_cir"] / self.p["n_seg"])
                     rad = rad_0 + (rad_1 - rad_0) * i_rad
 
                     # transition from quad mesh to circular mesh
@@ -329,7 +331,7 @@ class Mesh(Simulation):
                 for ic in range(self.p["n_point_cir"]):
                     # cylindrical coordinate system
                     axi = self.p["height"] * self.f["axi"](ia / self.p["n_axi"])
-                    cir = 2 * np.pi * ic / self.p["n_cell_cir"] / self.p["n_seg"]
+                    cir = 2 * np.pi * self.f["cir"](ic / self.p["n_cell_cir"] / self.p["n_seg"])
                     rad = (
                         self.p["r_inner"]
                         + (self.p["r_outer"] - self.p["r_inner"])
@@ -528,7 +530,7 @@ class Mesh(Simulation):
             "varWallProps": self.cosy,
         }
         for name, ids in self.surf_dict.items():
-            self.point_data["ids_" + name] = np.zeros(len(self.points), dtype=int)
+            self.point_data["ids_" + name] = np.zeros(len(self.points), dtype=np.int32)
             self.point_data["ids_" + name][ids] = 1
 
         # add insult profile
@@ -544,7 +546,7 @@ class Mesh(Simulation):
             "GlobalElementID": np.expand_dims(np.arange(len(self.cells)) + 1, axis=1)
         }
         for name, ids in self.vol_dict.items():
-            self.cell_data["ids_" + name] = np.zeros(len(self.cells))
+            self.cell_data["ids_" + name] = np.zeros(len(self.cells), dtype=np.int32)
             self.cell_data["ids_" + name][ids] = 1
             self.cell_data["ids_" + name] = np.expand_dims(
                 self.cell_data["ids_" + name], axis=1
@@ -571,8 +573,8 @@ class Mesh(Simulation):
             vol_f = threshold(vol, 1, "ids_" + f).GetOutput()
 
             # reset global ids
-            n_array = n2v(np.arange(vol_f.GetNumberOfPoints()) + 1)
-            e_array = n2v(np.arange(vol_f.GetNumberOfCells()) + 1)
+            n_array = n2v(np.arange(vol_f.GetNumberOfPoints()).astype(np.int32) + 1)
+            e_array = n2v(np.arange(vol_f.GetNumberOfCells()).astype(np.int32) + 1)
             n_array.SetName("GlobalNodeID")
             e_array.SetName("GlobalElementID")
             vol_f.GetPointData().AddArray(n_array)
