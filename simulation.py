@@ -37,13 +37,15 @@ class Simulation:
         """
         Validate parameters
         """
-        raise ValueError("Implement set_defaults in derived class")
+        # raise ValueError("Implement set_defaults in derived class")
+        pass
 
     def validate_params(self):
         """
         Validate parameters
         """
-        raise ValueError("Implement validate_params in derived class")
+        # raise ValueError("Implement validate_params in derived class")
+        pass
 
     def load_params(self, file_name):
         """

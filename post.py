@@ -493,8 +493,8 @@ def main_arg(folder):
     else:
         inp = {"FSGe": folder}
         # inp = {"FSGe unvconverged": os.path.join(folder, "partitioned")}
-    # inp = {"Preload penalty": "study_3dof_4dof/gr_4dof_preload_penalty/",
-    #        "Preload Lagrange": "study_3dof_4dof/gr_4dof_preload_lagrange/"}
+    # inp = {"p explicit": "study_explicit_implicit_p/gr_explicit/",
+    #        "p implicit": "study_explicit_implicit_p/gr_implicit/"}
 
     # collect all results
     data = {}

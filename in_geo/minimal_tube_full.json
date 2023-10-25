@@ -8,5 +8,7 @@
     "n_cir": 24,
     "n_rad_gr": 1,
     "n_rad_tran": 6,
-    "curve": 0.0
+    "curve": 0.0,
+    "exp": 1,
+    "quad": false
 }

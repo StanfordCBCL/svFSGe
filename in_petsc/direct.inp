@@ -2,6 +2,6 @@
 -pc_type lu
 -pc_factor_mat_solver_type mumps
 #-ksp_monitor
-# -malloc_debug
+#-malloc_debug
 #-start_in_debugger
-# -on_error_attach_debugger
+#-on_error_attach_debugger

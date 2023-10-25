@@ -48,8 +48,8 @@ Add mesh: msh {
 Add equation: struct {
    Coupled: 1
    Min iterations: 1
-   Max iterations: 30
-   Tolerance: 1e-11
+   Max iterations: 10
+   Tolerance: 1e-9
 
    Constitutive model: GR_Equilibrated
    Elasticity modulus: 1.0e-16
@@ -66,6 +66,7 @@ Add equation: struct {
       VonMises_stress: t
       Acceleration: t
       Fiber_direction: t
+      GR: t
    }
 
    LS type: GMRES
@@ -86,20 +87,35 @@ Add equation: struct {
       Effective direction: (0, 0, 1)
    }
 
+   # # stress
+   # Add BC: start {
+   #    Type: Neu
+   #    Time dependence: Steady
+   #    # Value: -249.424878031
+   #    Value: -250
+   #    Effective direction: (0, 0, 1)
+   # }
+   # Add BC: end {
+   #    Type: Neu
+   #    Time dependence: Steady
+   #    Value: -250
+   #    Effective direction: (0, 0, 1)
+   # }
+
+   # embedding tissue
+   Add BC: outside {
+      Type: Robin
+      Time dependence: Steady
+      Stiffness : 1.0
+      Damping: 0.0
+      Apply along normal direction: f
+   }
+
    # fluid pressure
    Add BC: inside {
       Type: Neu
       Time dependence: Spatial
       Spatial values file path: interface_pressure.vtp
       Follower pressure load: t
-   }
-
-   # embedding tissue
-   Add BC: outside {
-      Type: Robin
-      Time dependence: Steady
-      Stiffness : 1.0e1
-      Damping: 0.0
-      Apply along normal direction: f
    }
 }

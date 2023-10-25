@@ -59,13 +59,13 @@ class FSG(svFSI):
         i = 0
         for t in range(self.p["nmax"] + 1):
             print(
-                "=" * 20
+                "=" * 30
                 + " t "
                 + str(t)
                 + " ==== fp "
                 + "{:.2f}".format(self.p_vec[t])
                 + " "
-                + "=" * 20
+                + "=" * 30
             )
 
             # predict solution for next load step
@@ -275,7 +275,7 @@ class FSG(svFSI):
         self.coup_omega("disp", i, t, n)
         if not self.coup_converged(n):
             # no IQN-ILS update during preloading or first time step
-            if (t<= 1 and n < 5):# or n == 0:
+            if ((t == 0) or (t == 1 and n < 5)):# or n == 0:
                 self.coup_relax("solid", "disp", i, t, n)
             else:
                 # maximum number of time steps used in IQN-ILS

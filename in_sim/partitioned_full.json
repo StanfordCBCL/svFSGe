@@ -1,19 +1,19 @@
 {
-    "fsi": true,
-    "debug": false,
+    "fsi": false,
+    "debug": true,
     "tortuosity": false,
-    "mesh": "fsg_full_medium.json",
+    "mesh": "fsg_full_coarse.json",
     "n_procs": {
-        "fluid": 12,
-        "mesh": 12,
-        "solid": 12  
+        "fluid": 10,
+        "mesh": 10,
+        "solid": 1
     },
     "fluid": {
         "mu": 4e-06,
         "rho": 1.06e-6,
         "p0": 13.9868,
         "q0": 1000.0,
-        "q0_rate": 2000.0
+        "q0_rate": 200.0
     },
     "n_max": {
         "fluid": 10,
@@ -23,18 +23,18 @@
     "coup": {
         "nmax": 200,
         "nmin": 1,
-        "tol": 1.0e-3,
+        "tol": 1.0e-4,
         "method": "iqn_ils",
-        "omega0": 0.01,
-        "iqn_ils_q": 30,
-        "iqn_ils_eps": 1.0e-2
+        "omega0": 0.1,
+        "iqn_ils_q": 20,
+        "iqn_ils_eps": 1.0e-1
     },
-    "nmax": 100,
+    "nmax": 10,
     "fmax": 1.0,
     "predict_file": false,
     "exe": {
-        "fluid": "svFSI_fork/build/svFSI-build/bin/svFSI",
-        "mesh": "svFSI_fork/build/svFSI-build/bin/svFSI",
+        "fluid": "svFSI_clean/build/svFSI-build/bin/svFSI",
+        "mesh": "svFSI_clean/build/svFSI-build/bin/svFSI",
         "solid": "svFSI_fork/build/svFSI-build/bin/svFSI"
     },
     "inp": {
