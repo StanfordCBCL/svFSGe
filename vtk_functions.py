@@ -176,7 +176,8 @@ def threshold(inp, t, name):
     thresh = vtk.vtkThreshold()
     thresh.SetInputData(inp)
     thresh.SetInputArrayToProcess(0, 0, 0, 1, name)
-    thresh.ThresholdBetween(t, t)
+    thresh.SetLowerThreshold(t)
+    thresh.SetUpperThreshold(t)
     thresh.Update()
     return thresh
 
