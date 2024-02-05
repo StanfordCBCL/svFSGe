@@ -333,15 +333,16 @@ def plot_single(data, coords, out, study, quant, locations):
                 if study == "single":
                     if ":" in lc:
                         # plotting along a coordinate axis
-                        xdata = coords[lc].copy()
+                        xdata = coords[n][lc].copy()
                         dim = loc.index(":")
                         loc.remove(":")
                         if dim == 0:
                             xlabel = "Vessel circumference [°]"
                             xdata *= 180 / np.pi
-                            xdata -= 180
-                            # xticks = np.arange(-180, 180, 45).astype(int)
-                            xticks = np.arange(0, 360, 45).astype(int)
+                            xdata = np.append(xdata, 360)
+                            ydata = np.append(ydata, ydata[0])
+                            dphi = 45
+                            xticks = np.arange(0, 360 + dphi, dphi).astype(int)
                         elif dim == 1:
                             xlabel = "Vessel radius [mm]"
                             xticks = xdata
@@ -432,8 +433,9 @@ def main():
 
     # collect all results
     data = {}
+    coords = {}
     for n, o in inp.items():
-        data[n], coords = post_process(o)
+        data[n], coords[n] = post_process(o)
     
     plot_res(data, coords, out, "single")
 
@@ -488,18 +490,23 @@ def main_arg(folder):
 
     # post-process simulation (converged and unconverged)
     data = {}
-    if folder == "gr":
+    if "gr" in folder:
         inp = {"G&R": folder}
     else:
         inp = {"FSGe": folder}
         # inp = {"FSGe unvconverged": os.path.join(folder, "partitioned")}
-    # inp = {"p explicit": "study_explicit_implicit_p/gr_explicit/",
-    #        "p implicit": "study_explicit_implicit_p/gr_implicit/"}
+    # inp = {"$\phi_c$ $C^0$ continuous (1x20x32)": "study_salvador_smoothing/gr_phic_coarse/",
+    #        "$\phi_c$ $C^0$ continuous (2x40x64)": "study_salvador_smoothing/gr_phic_medium/"}
+    # inp = {"Original: $p_h, \phi^c_h$ at Gauss point": "study_salvador_smoothing/gr_medium_2",
+    #        "Smoothed: $p_h$ $C^0$ continuous": "study_salvador_smoothing/gr_p_medium_2/",
+    #        "Smoothed: $\phi^c_h$ $C^0$ continuous": "study_salvador_smoothing/gr_phic_medium_2/"}
 
+           
     # collect all results
     data = {}
+    coords = {}
     for n, o in inp.items():
-        data[n], coords = post_process(o)
+        data[n], coords[n] = post_process(o)
     
     plot_res(data, coords, out, "single")
 
