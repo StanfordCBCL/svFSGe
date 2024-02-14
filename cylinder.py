@@ -527,7 +527,7 @@ class Mesh(Simulation):
         self.point_data = {
             "GlobalNodeID": np.arange(len(self.points)) + 1,
             "FIB_DIR": np.array(self.fiber_dict["rad"]),
-            "varWallProps": self.cosy,
+            "gr_properties": self.cosy,
         }
         for name, ids in self.surf_dict.items():
             self.point_data["ids_" + name] = np.zeros(len(self.points), dtype=np.int32)

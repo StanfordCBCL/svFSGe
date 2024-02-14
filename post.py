@@ -209,8 +209,10 @@ def post_process(f_out):
         fsge = True
         fname = os.path.join(f_out, "tube_*.vtu")
     
-    # read results from fike
+    # read results from file
     res = read_res(fname, fsge)
+    if not len(res):
+        raise RuntimeError("No results found in " + f_out)
 
     # double up results if there's only one time step
     if len(res) == 1:
@@ -485,23 +487,18 @@ def main_param():
 
 def main_arg(folder):
     # define paths
-    out = os.path.join(folder, "post")
+    out = os.path.join(folder[0], "post")
     os.makedirs(out, exist_ok=True)
 
     # post-process simulation (converged and unconverged)
-    data = {}
-    if "gr" in folder:
-        inp = {"G&R": folder}
-    else:
-        inp = {"FSGe": folder}
-        # inp = {"FSGe unvconverged": os.path.join(folder, "partitioned")}
-    # inp = {"$\phi_c$ $C^0$ continuous (1x20x32)": "study_salvador_smoothing/gr_phic_coarse/",
-    #        "$\phi_c$ $C^0$ continuous (2x40x64)": "study_salvador_smoothing/gr_phic_medium/"}
-    # inp = {"Original: $p_h, \phi^c_h$ at Gauss point": "study_salvador_smoothing/gr_medium_2",
-    #        "Smoothed: $p_h$ $C^0$ continuous": "study_salvador_smoothing/gr_p_medium_2/",
-    #        "Smoothed: $\phi^c_h$ $C^0$ continuous": "study_salvador_smoothing/gr_phic_medium_2/"}
+    inp = {}
+    for f in folder:
+        fname = os.path.split(f)[-1]
+        if "gr" in fname:
+            inp[fname] = f
+        else:
+            inp["FSGe"] = f
 
-           
     # collect all results
     data = {}
     coords = {}
@@ -512,7 +509,7 @@ def main_arg(folder):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Post-process FSGe simulation")
-    parser.add_argument("out", nargs='?', default="None", help="svFSI output folder")
+    parser.add_argument("out", nargs='+', default="None", help="svFSI output folder")
     args = parser.parse_args()
 
     if not args.out:

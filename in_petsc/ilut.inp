@@ -1,0 +1,10 @@
+-ksp_type gmres
+-ksp_gmres_restart 300
+#-pc_type gamg
+-ksp_rtol 1e-6
+-ksp_max_it 400
+#-ksp_monitor
+-pc_type hypre
+-pc_hypre_type pilut
+-pc_hypre_pilut_toll 1.0e-2
+-pc_hypre_pilut_factorrowsize 2

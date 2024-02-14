@@ -228,9 +228,10 @@ class FSG(svFSI):
         f_code = os.path.join(
             self.p["paths"]["exe"], os.path.split(self.p["exe"]["solid"])[0]
         )
-        src = f_code + "/../../../Code/Source/svFSI/FEMbeCmm.cpp"
-        trg = os.path.join(self.p["f_arx"], "FEMbeCmm.cpp")
-        shutil.copyfile(src, trg)
+        cpp_files = f_code + "/../../../Code/Source/svFSI/gr_*.*"
+        for src in glob.glob(cpp_files):
+            trg = os.path.join(self.p["f_arx"], os.path.basename(src))
+            shutil.copyfile(src, trg)
 
     def coup_step_iqn_ils(self, i, t, n, times):
         # step 0: mesh movement (not in first first iteration)

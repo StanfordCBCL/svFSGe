@@ -8,6 +8,6 @@
     "n_cir": 32,
     "n_rad_gr": 1,
     "n_rad_tran": 8,
-    "exp": 1,
+    "exp": 2,
     "quad": false
 }

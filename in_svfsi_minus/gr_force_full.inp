@@ -2,9 +2,9 @@
 
 Continue previous simulation: 1
 Number of spatial dimensions: 3
-Number of time steps: 1
+Number of time steps: 11
 Time step size: 1.0
-Spectral radius of infinite time step: 0.0
+Spectral radius of infinite time step: 0.2
 
 Save results to VTK format: 1
 Name prefix of saved VTK files: gr
@@ -45,12 +45,11 @@ Add mesh: msh {
 
 #----------------------------------------------------------------
 # Equations
-Add equation: gr {
+Add equation: struct {
    Coupled: 1
    Min iterations: 2
-   Max iterations: 100
-   Tolerance: 1e-9
-   Use Taylor-Hood type basis: t
+   Max iterations: 200
+   Tolerance: 1e-10
 
    Constitutive model: GR_Equilibrated
    Elasticity modulus: 1.0e-16
@@ -67,7 +66,6 @@ Add equation: gr {
       VonMises_stress: t
       Acceleration: t
       Fiber_direction: t
-      GR: t
    }
 
    LS type: GMRES
@@ -85,33 +83,19 @@ Add equation: gr {
       Zero out perimeter: f
    }
    Add BC: end {
-      Type: Dir
-      Value: 0.0
+      Type: Neu
+      Value: -250.0
       Effective direction: (0, 0, 1)
       Impose on state variable integral: t
       Zero out perimeter: f
    }
 
-   # # stress
-   # Add BC: start {
-   #    Type: Neu
-   #    Time dependence: Steady
-   #    # Value: -249.424878031
-   #    Value: -250
-   #    Effective direction: (0, 0, 1)
-   # }
-   # Add BC: end {
-   #    Type: Neu
-   #    Time dependence: Steady
-   #    Value: -250
-   #    Effective direction: (0, 0, 1)
-   # }
-
    # embedding tissue
    Add BC: outside {
       Type: Robin
       Time dependence: Steady
-      Stiffness : 1.0e0
+      Value: 0.0
+      Stiffness : 0.1
       Damping: 0.0
       Apply along normal direction: f
    }
@@ -119,8 +103,9 @@ Add equation: gr {
    # step 1: pre-stressing
    Add BC: inside {
       Type: Neu
-      Time dependence: Steady
-      Value: 13.9868
+      Time dependence: Unsteady
+      Temporal values file path: load_pre.dat
+      Ramp function: t
       Follower pressure load: t
    }
 }

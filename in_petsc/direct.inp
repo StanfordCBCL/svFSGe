@@ -1,7 +1,14 @@
 -ksp_type preonly
 -pc_type lu
 -pc_factor_mat_solver_type mumps
-#-ksp_monitor
+-mat_mumps_icntl_24 1
+# -mat_mumps_cntl_3 1e-6
+# -mat_mumps_icntl_25 0
+# -mat_mumps_cntl_3 1e-9
+# -mat_mumps_cntl_1 1e-12
+# -ksp_error_if_not_converged
+# -ksp_monitor
+# -mat_view
 #-malloc_debug
 #-start_in_debugger
 #-on_error_attach_debugger

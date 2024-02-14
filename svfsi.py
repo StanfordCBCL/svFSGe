@@ -287,7 +287,7 @@ class svFSI(Simulation):
 
     def set_solid(self, t):
         # name of wall properties array
-        n = "varWallProps"
+        n = "gr_properties"
 
         # read solid volume mesh
         solid = self.mesh[("vol", "solid")]
@@ -412,7 +412,7 @@ class svFSI(Simulation):
                 if f == "wss":
                     sol = []
                     for r in res:
-                        n_smooth = 3
+                        n_smooth = 0
                         c2p = r
                         for _ in range(n_smooth):
                             # map point data to cell data
@@ -426,7 +426,7 @@ class svFSI(Simulation):
                             c2p.Update()
 
                         # get element-wise wss maped to point data
-                        sol += [v2n(c2p.GetOutput().GetPointData().GetArray("WSS"))]
+                        sol += [v2n(c2p.GetPointData().GetArray("WSS"))]
                     sol = np.mean(np.array(sol), axis=0)
 
                     # points on fluid interface
@@ -652,7 +652,7 @@ class Solution:
             self.sol[f][map_v] = deepcopy(sol)
         elif "wss" in f:
             # wss in tube volume
-            self.sol[f][map_v] = deepcopy(sol)
+            self.sol[f][map_v] = deepcopy(np.linalg.norm(sol, axis=1))
 
             # wss at fluid interface
             sol_int = self.sol[f][self.sim.map((("int", "fluid"), ("vol", "tube")))]

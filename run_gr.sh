@@ -4,9 +4,10 @@ set -e
 
 export DYLD_LIBRARY_PATH=$PETSC_DIR/lib:$DYLD_LIBRARY_PATH
 export LDFLAGS="-Wl,-no_compact_unwind"
+export SVFSI_DIR="/Users/pfaller/work/repos/svFSIplus_fork"
 
 # compile source code
-(cd ~/work/repos/svFSI_fork/build/svFSI-build && make)
+(cd $SVFSI_DIR/build/svFSI-build && make -j8)
 
 # delete old mesh
 rm -rf mesh_tube_fsi*
@@ -19,11 +20,11 @@ rm -rf gr
 
 # archive simulation
 mkdir gr
-cp ~/work/repos/svFSI_fork/Code/Source/svFSI/FEMbeCmm.cpp gr
-cp in_svfsi/gr_full.inp gr
+cp $SVFSI_DIR/Code/Source/svFSI/gr_equilibrated.cpp gr
+cp in_svfsi_plus/gr_full.xml gr
 
 # run simulation
-mpirun -np ${2} ~/work/repos/svFSI_fork/build/svFSI-build/bin/svFSI in_svfsi/gr_full.inp || true
+mpirun -np ${2} $SVFSI_DIR/build/svFSI-build/bin/svFSI in_svfsi_plus/gr_full.xml || true
 
 # run post-processing
 ./post.py gr

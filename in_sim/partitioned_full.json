@@ -1,5 +1,5 @@
 {
-    "fsi": false,
+    "fsi": true,
     "debug": true,
     "tortuosity": false,
     "mesh": "fsg_full_coarse.json",
@@ -33,14 +33,14 @@
     "fmax": 1.0,
     "predict_file": false,
     "exe": {
-        "fluid": "svFSI_clean/build/svFSI-build/bin/svFSI",
-        "mesh": "svFSI_clean/build/svFSI-build/bin/svFSI",
-        "solid": "svFSI_fork/build/svFSI-build/bin/svFSI"
+        "fluid": "svFSIplus_fork/build/svFSI-build/bin/svFSI",
+        "mesh": "svFSIplus_fork/build/svFSI-build/bin/svFSI",
+        "solid": "svFSIplus_fork/build/svFSI-build/bin/svFSI"
     },
     "inp": {
-        "fluid": "steady_full.inp",
-        "mesh": "mesh_full.inp",
-        "solid": "gr_full_restart.inp"
+        "fluid": "steady_full.xml",
+        "mesh": "mesh_full.xml",
+        "solid": "gr_full_restart.xml"
     },
     "interfaces": {
         "bc_flow": "steady_flow.dat",
@@ -62,21 +62,21 @@
     "paths_linux_ubuntu": {
         "in_geo": "/home/pfaller/work/repos/FSG/in_geo",
         "in_petsc": "/home/pfaller/work/repos/FSG/in_petsc",
-        "in_svfsi": "/home/pfaller/work/repos/FSG/in_svfsi",
+        "in_svfsi": "/home/pfaller/work/repos/FSG/in_svfsi_plus",
         "exe": "/home/pfaller/work/repos",
         "root": "."
     },
     "paths_linux_centos": {
         "in_geo": "/home/users/pfaller/work/repos/FSG/in_geo",
         "in_petsc": "/home/users/pfaller/work/repos/FSG/in_petsc",
-        "in_svfsi": "/home/users/pfaller/work/repos/FSG/in_svfsi",
+        "in_svfsi": "/home/users/pfaller/work/repos/FSG/in_svfsi_plus",
         "exe": "/home/users/pfaller/work/repos",
         "root": "."
     },
     "paths_darwin": {
         "in_geo": "/Users/pfaller/work/repos/FSG/in_geo",
         "in_petsc": "/Users/pfaller/work/repos/FSG/in_petsc",
-        "in_svfsi": "/Users/pfaller/work/repos/FSG/in_svfsi",
+        "in_svfsi": "/Users/pfaller/work/repos/FSG/in_svfsi_plus",
         "exe": "/Users/pfaller/work/repos",
         "root": "."
     }

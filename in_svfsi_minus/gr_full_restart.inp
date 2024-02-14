@@ -66,6 +66,7 @@ Add equation: struct {
       VonMises_stress: t
       Acceleration: t
       Fiber_direction: t
+      Def_grad: t
       GR: t
    }
 
