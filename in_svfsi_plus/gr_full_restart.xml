@@ -28,7 +28,7 @@
 <Add_mesh name="msh" > 
 
   <Mesh_file_path>  mesh_tube_fsi/solid/mesh-complete.mesh.vtu </Mesh_file_path>
-  <GR_properties_file_path>  mesh_tube_fsi/solid/mesh-complete.mesh.vtu </GR_properties_file_path>
+  <GR_properties_file_path>  solid.vtu </GR_properties_file_path>
 
   <Add_face name="start">
       <Face_file_path>  mesh_tube_fsi/solid/mesh-surfaces/start.vtp </Face_file_path>
@@ -92,6 +92,7 @@
       <Time_dependence> Steady </Time_dependence> 
       <Stiffness> 1.0 </Stiffness> 
       <Damping> 0.0 </Damping> 
+      <Apply_along_normal_direction> false </Apply_along_normal_direction> 
    </Add_BC> 
 
    <Add_BC name="inside" > 
