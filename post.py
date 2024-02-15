@@ -136,7 +136,7 @@ def get_results(results, pts, ids):
 
     # get results at all time steps
     for res in results:
-        extract_results(post, results[0], res, pts, ids, out = res == results[-1])
+        extract_results(post, res, pts, ids)
 
     # convert to numpy arrays
     for loc in post.keys():
@@ -145,12 +145,15 @@ def get_results(results, pts, ids):
 
     return post
 
-def extract_results(post, res0, res, pts, ids, out=False):
+def extract_results(post, res, pts, ids):
     # get nodal displacements
     d = v2n(res.GetPointData().GetArray("Displacement"))
 
     # get G&R output
-    gr = v2n(res.GetPointData().GetArray("GR"))
+    if res.GetPointData().HasArray("GR"):
+        gr = v2n(res.GetPointData().GetArray("GR"))
+    else:
+        gr = np.zeros((pts.shape[0], 50))
 
     # jacobian 
     jac = v2n(res.GetPointData().GetArray("Jacobian"))
@@ -225,9 +228,9 @@ def post_process(f_out):
     ids, coords = get_ids(pts)
 
     # extract displacements
-    return get_results(res, pts, ids), coords
+    return get_results(res, pts, ids), coords, len(res)
 
-def plot_res(data, coords, out, study):
+def plot_res(data, coords, times, out, study):
     # cir locations: o' clocks
     loc_cir = range(0, 12, 3)
 
@@ -237,34 +240,37 @@ def plot_res(data, coords, out, study):
     # axi locations: ["start", "mid", "end"]
     loc_axi = ["mid"]
 
-    # loop fields and plot
-    fields = ["disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]
-    for f in sorted(fields):
-        # plot single points
-        for lr in loc_rad:
-            for la in loc_axi:
-                plot_points = [(lc, lr, la) for lc in loc_cir]
-                plot_single(data, coords, out, study, f, plot_points)
-
-        if study == "single":
-            # plot circumferential ring
+    # loop all time steps
+    t_max = max(times.values())
+    for t in reversed(range(t_max)):
+        # loop fields and plot
+        fields = ["disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]
+        for f in sorted(fields):
+            # plot single points
             for lr in loc_rad:
                 for la in loc_axi:
-                    plot_cir = [(":", lr, la)]
-                    plot_single(data, coords, out, study, f, plot_cir)
+                    plot_points = [(lc, lr, la) for lc in loc_cir]
+                    plot_single(data, coords, out, study, f, plot_points, t)
 
-            # plot along radius
-            for la in loc_axi:
-                plot_rad = [(lc, ":", la) for lc in loc_cir]
-                plot_single(data, coords, out, study, f, plot_rad)
+            if study == "single":
+                # plot circumferential ring
+                for lr in loc_rad:
+                    for la in loc_axi:
+                        plot_cir = [(":", lr, la)]
+                        plot_single(data, coords, out, study, f, plot_cir, t)
 
-            # plot along axial lines
-            for lr in loc_rad:
-                plot_axi = [(lc, lr, ":") for lc in loc_cir]
-                plot_single(data, coords, out, study, f, plot_axi)
+                # plot along radius
+                for la in loc_axi:
+                    plot_rad = [(lc, ":", la) for lc in loc_cir]
+                    plot_single(data, coords, out, study, f, plot_rad, t)
+
+                # plot along axial lines
+                for lr in loc_rad:
+                    plot_axi = [(lc, lr, ":") for lc in loc_cir]
+                    plot_single(data, coords, out, study, f, plot_axi, t)
 
 
-def plot_single(data, coords, out, study, quant, locations):
+def plot_single(data, coords, out, study, quant, locations, time=-1):
     # plot text
     scale = 1.0
     if quant == "disp":
@@ -320,8 +326,14 @@ def plot_single(data, coords, out, study, quant, locations):
 
                 # get data for y-axis
                 ydata = res[lc][quant].copy()
+                time_str = ""
                 if ":" in lc:
-                    ydata = ydata[-1].T
+                    if time == -1:
+                        time = len(ydata) - 1
+                    time_str = "_t" + str(time)
+                    if time > len(ydata) - 1:
+                        continue
+                    ydata = ydata[time].T
                 if ny > 1:
                     ydata = ydata.T[i]
                 ydata *= scale
@@ -377,7 +389,7 @@ def plot_single(data, coords, out, study, quant, locations):
                 if len(locations) == 1:
                     fname += "_".join([""] + loc)
                     stl = "-"
-                    col = "#8C1515"
+                    col = "k"
                 else:
                     # assume all locations provided are circumferential
                     fname += "_".join([""] + loc[1:])
@@ -409,8 +421,8 @@ def plot_single(data, coords, out, study, quant, locations):
             if j == 0:
                 ax[pos].set_ylabel(ylabel[i])
     plt.tight_layout()
+    fname += time_str + ".png"
     print(fname)
-    fname += ".png"
     fig.savefig(os.path.join(out, fname), bbox_inches='tight')
     plt.cla()
 
@@ -436,10 +448,11 @@ def main():
     # collect all results
     data = {}
     coords = {}
+    times = {}
     for n, o in inp.items():
-        data[n], coords[n] = post_process(o)
+        data[n], coords[n], times[n] = post_process(o)
     
-    plot_res(data, coords, out, "single")
+    plot_res(data, coords, times, out, "single")
 
 def main_param():
     print("\n\nplotting all kski\n")
@@ -487,7 +500,10 @@ def main_param():
 
 def main_arg(folder):
     # define paths
-    out = os.path.join(folder[0], "post")
+    if len(folder) == 1:
+        out = os.path.join(folder[0], "post")
+    else:
+        out = os.path.join(folder[0], "..", "post")
     os.makedirs(out, exist_ok=True)
 
     # post-process simulation (converged and unconverged)
@@ -502,10 +518,11 @@ def main_arg(folder):
     # collect all results
     data = {}
     coords = {}
+    times = {}
     for n, o in inp.items():
-        data[n], coords[n] = post_process(o)
+        data[n], coords[n], times[n] = post_process(o)
     
-    plot_res(data, coords, out, "single")
+    plot_res(data, coords, times, out, "single")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Post-process FSGe simulation")
