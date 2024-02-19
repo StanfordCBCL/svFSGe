@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 
 from svfsi import svFSI, sv_names
+from post import main_arg
 
 from utilities import QRfiltering_mod
 
@@ -50,6 +51,10 @@ class FSG(svFSI):
 
         # plot convergence
         self.plot_convergence()
+
+        # post process
+        out_path = os.path.join(self.p["f_out"], "partitioned", "converged")
+        main_arg([out_path])
 
     def main(self):
         # print reynolds number
@@ -95,7 +100,7 @@ class FSG(svFSI):
                         return
 
                 # screen output
-                out = "i " + str(i) + " \tn " + str(n) + "\t"
+                out = "i " + str(i - 1) + " \tn " + str(n) + "\t"
                 for name, e in self.err.items():
                     out += "{:.2e}".format(e[-1][-1]) + "\t"
                 if self.p["coup"]["method"] in ["static", "aitken"]:
@@ -203,12 +208,12 @@ class FSG(svFSI):
         fig.savefig(
             os.path.join(self.p["f_out"], "convergence.png"), bbox_inches="tight"
         )
-        plt.show()
+        # plt.show()
         plt.close(fig)
 
     def archive(self):
         # save stored results
-        np.save(os.path.join(self.p["f_out"], "err.npy"), self.err)
+        self.p["error"] = self.err
 
         # save parameters
         self.save_params(self.p["name"] + ".json")
@@ -236,7 +241,7 @@ class FSG(svFSI):
     def coup_step_iqn_ils(self, i, t, n, times):
         # step 0: mesh movement (not in first first iteration)
         if self.p["fsi"] and i > 1:
-            if self.step("mesh", i, t, times):
+            if self.step("mesh", i, t, n, times):
                 return False
         else:
             times["mesh"] = 0.0
@@ -246,13 +251,13 @@ class FSG(svFSI):
 
         # step 1: fluid update
         if self.p["fsi"]:
-            if self.step("fluid", i, t, times):
+            if self.step("fluid", i, t, n, times):
                 return False
         else:
             self.poiseuille(t)
 
         # step 2: solid update
-        if self.step("solid", i, t, times):
+        if self.step("solid", i, t, n, times):
             return False
 
         # log interface solution
@@ -309,7 +314,7 @@ class FSG(svFSI):
     def coup_step_relax(self, i, t, n, times):
         # step 0: mesh movement (not in very first iteration)
         if self.p["fsi"] and i > 1:
-            if self.step("mesh", i, t, times):
+            if self.step("mesh", i, t, n, times):
                 return False
 
         # store previous solutions
@@ -317,13 +322,13 @@ class FSG(svFSI):
 
         # step 1: fluid update
         if self.p["fsi"]:
-            if self.step("fluid", i, t, times):
+            if self.step("fluid", i, t, n, times):
                 return False
         else:
             self.poiseuille(t)
 
         # step 2: solid update
-        if self.step("solid", i, t, times):
+        if self.step("solid", i, t, n, times):
             return False
 
         # log interface solution for aitken relaxation

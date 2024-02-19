@@ -27,18 +27,18 @@
 
 <Add_mesh name="fluid" > 
 
-  <Mesh_file_path>  fluid.vtu </Mesh_file_path>
+  <Mesh_file_path> fluid.vtu </Mesh_file_path>
 
   <Add_face name="f_interface">
-      <Face_file_path>  mesh_tube_fsi/fluid/mesh-surfaces/interface.vtp </Face_file_path>
+      <Face_file_path> interface.vtp </Face_file_path>
   </Add_face>
 
   <Add_face name="f_start">
-      <Face_file_path>  mesh_tube_fsi/fluid/mesh-surfaces/start.vtp </Face_file_path>
+      <Face_file_path> start.vtp </Face_file_path>
   </Add_face>
 
   <Add_face name="f_end">
-      <Face_file_path>  mesh_tube_fsi/fluid/mesh-surfaces/end.vtp </Face_file_path>
+      <Face_file_path> end.vtp </Face_file_path>
   </Add_face>
 
 </Add_mesh>
@@ -71,7 +71,8 @@
    <Add_BC name="f_start" > 
       <Type> Dir </Type> 
       <Profile> Parabolic </Profile> 
-      <Temporal_values_file_path> steady_flow.dat </Temporal_values_file_path> 
+      <Value> -1000.0 </Value> 
+      <!-- <Temporal_values_file_path> steady_flow.dat </Temporal_values_file_path>  -->
       <!-- <Time_dependence> General </Time_dependence> -->
       <!-- <Temporal_and_spatial_values_file_path> inflow_vector.dat </Temporal_and_spatial_values_file_path>  -->
       <Zero_out_perimeter> false </Zero_out_perimeter> 

@@ -5,6 +5,7 @@ import pdb
 import argparse
 import os
 import glob
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -241,8 +242,9 @@ def plot_res(data, coords, times, out, study):
     loc_axi = ["mid"]
 
     # loop all time steps
-    t_max = max(times.values())
-    for t in reversed(range(t_max)):
+    t_max = min(times.values())
+    # for t in reversed(range(t_max)):
+    for t in [-1]:
         # loop fields and plot
         fields = ["disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]
         for f in sorted(fields):
@@ -501,19 +503,22 @@ def main_param():
 def main_arg(folder):
     # define paths
     if len(folder) == 1:
-        out = os.path.join(folder[0], "post")
-    else:
-        out = os.path.join(folder[0], "..", "post")
+        folder += [os.path.join(folder[0], "post")]
+    out = folder[-1]
     os.makedirs(out, exist_ok=True)
 
     # post-process simulation (converged and unconverged)
     inp = {}
-    for f in folder:
+    for f in folder[:-1]:
         fname = os.path.split(f)[-1]
         if "gr" in fname:
             inp[fname] = f
         else:
-            inp["FSGe"] = f
+            sname = f.split(os.sep)[0]
+            f_config = os.path.join(sname, "partitioned.json")
+            # config = json.load(open(f_config))
+            # name = os.path.splitext(config['mesh'])[0]
+            inp[sname] = f
 
     # collect all results
     data = {}

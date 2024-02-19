@@ -1,11 +1,11 @@
 {
     "fsi": true,
-    "debug": true,
+    "debug": false,
     "tortuosity": false,
     "mesh": "fsg_full_coarse.json",
     "n_procs": {
-        "fluid": 10,
-        "mesh": 10,
+        "fluid": 8,
+        "mesh": 1,
         "solid": 1
     },
     "fluid": {
@@ -23,7 +23,7 @@
     "coup": {
         "nmax": 200,
         "nmin": 1,
-        "tol": 1.0e-4,
+        "tol": 1.0e-3,
         "method": "iqn_ils",
         "omega0": 0.1,
         "iqn_ils_q": 20,

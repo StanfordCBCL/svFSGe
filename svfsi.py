@@ -34,7 +34,7 @@ sv_names = {
     "cauchy": "Cauchy_stress",
     "stress": "Stress",
     "strain": "Strain",
-    "gr": "GR"
+    "gr": "GR",
 }
 
 
@@ -52,8 +52,8 @@ class svFSI(Simulation):
 
         # select paths for this platform
         plat = platform.system().lower()
-        if plat == 'linux':
-            plat += '_' + distro.name().split()[0].lower()
+        if plat == "linux":
+            plat += "_" + distro.name().split()[0].lower()
         self.p["paths"] = self.p["paths_" + plat]
 
         # output folder name
@@ -67,7 +67,9 @@ class svFSI(Simulation):
 
         # generate and move files and folders
         if load:
-            fm = os.path.join(os.path.dirname(f_params), "mesh_tube_fsi", "cylinder.json")
+            fm = os.path.join(
+                os.path.dirname(f_params), "mesh_tube_fsi", "cylinder.json"
+            )
             self.mesh_p = Mesh(fm).p
         else:
             self.setup_files()
@@ -85,9 +87,13 @@ class svFSI(Simulation):
 
         fp = join(self.p["f_out"], "mesh_tube_fsi/")
         self.mesh[("vol", "tube")] = read_geo(fp + self.mesh_p["fname"]).GetOutput()
-        self.mesh[("int", "inlet")] = read_geo(
-            fp + "/fluid/mesh-surfaces/start.vtp"
-        ).GetOutput()
+
+        surfaces = ["start", "end", "interface"]
+        for s in surfaces:
+            fp = join(
+                self.p["f_out"], "mesh_tube_fsi", "fluid", "mesh-surfaces", s + ".vtp"
+            )
+            self.mesh[("int", s)] = read_geo(fp).GetOutput()
 
         if self.p["tortuosity"]:
             fp = join(self.p["f_out"], "mesh_tube_fsi", d)
@@ -137,11 +143,8 @@ class svFSI(Simulation):
         shutil.copytree(self.p["paths"]["in_petsc"], join(self.p["f_out"], "in_petsc"))
 
         # generate and initialize mesh
-        self.mesh_p = generate_mesh(
-            join(self.p["paths"]["in_geo"], self.p["mesh"])
-        )
+        self.mesh_p = generate_mesh(join(self.p["paths"]["in_geo"], self.p["mesh"]))
         shutil.move("mesh_tube_fsi", join(self.p["f_out"], "mesh_tube_fsi"))
-
 
     def set_defaults(self):
         pass
@@ -186,7 +189,7 @@ class svFSI(Simulation):
         p = self.p["fluid"]["p0"] * self.p_vec[t]
 
         # set bc pressure and flow
-        for bc, val in zip(["pressure", "flow"], [p, -q]):
+        for bc, val in zip(["pressure", "flow"], [p, q]):
             fn = join(self.p["f_out"], self.p["interfaces"]["bc_" + bc])
             with open(fn, "w") as f:
                 f.write("2 1\n")
@@ -225,9 +228,13 @@ class svFSI(Simulation):
                         f.write(str(di * q * u) + " ")
                     f.write("\n")
 
+        # get displacements
+        # todo: move all to dedicated folder mesh_fluid_deformed
+        disp = self.curr.get(("fluid", "disp", "vol"))
+
         # add solution to fluid mesh
         fluid = self.mesh[("vol", "fluid")]
-        add_array(fluid, self.curr.get(("fluid", "disp", "vol")), sv_names["disp"])
+        add_array(fluid, disp, sv_names["disp"])
 
         # warp mesh by displacements
         fluid.GetPointData().SetActiveVectors(sv_names["disp"])
@@ -236,10 +243,24 @@ class svFSI(Simulation):
         warp.Update()
 
         # write geometry to file
-        write_geo(
-            join(self.p["f_out"], self.p["interfaces"]["geo_fluid"]),
-            warp.GetOutput(),
-        )
+        f_out = join(self.p["f_out"], self.p["interfaces"]["geo_fluid"])
+        write_geo(f_out, warp.GetOutput())
+
+        surfaces = ["start", "end", "interface"]
+        for s in surfaces:
+            surf = self.mesh[("int", s)]
+            map_s = self.map((("int", s), ("vol", "fluid")))
+            add_array(surf, disp[map_s], sv_names["disp"])
+
+            # warp mesh by displacements
+            surf.GetPointData().SetActiveVectors(sv_names["disp"])
+            warp = vtk.vtkWarpVector()
+            warp.SetInputData(surf)
+            warp.Update()
+
+            # write geometry to file
+            f_out = join(self.p["f_out"], s + ".vtp")
+            write_geo(f_out, warp.GetOutput())
 
     def set_mesh(self, i):
         # write general bc file
@@ -285,19 +306,24 @@ class svFSI(Simulation):
         # write geometry to file
         write_geo(join(self.p["f_out"], self.p["interfaces"]["geo_mesh"]), mesh)
 
-    def set_solid(self, t):
+    def set_solid(self, n, t):
         # name of wall properties array
-        n = "gr_properties"
+        name = "gr_properties"
 
         # read solid volume mesh
         solid = self.mesh[("vol", "solid")]
 
-        # set wss and time
-        props = v2n(solid.GetPointData().GetArray(n))
+        # set wss
+        props = v2n(solid.GetPointData().GetArray(name))
         props[:, 6] = self.curr.get(("solid", "wss", "vol"))
+
+        # set time
         props[:, 7] = t + 1
-        # props[:, 8] = self.curr.get(("solid", "intramural", "vol"))
-        add_array(solid, props, n)
+
+        # beginning of new load step?
+        props[:, 12] = n == 0
+
+        add_array(solid, props, name)
 
         # write geometry to file
         fn = join(self.p["f_out"], self.p["interfaces"]["geo_solid"])
@@ -321,12 +347,10 @@ class svFSI(Simulation):
             num = perturb * np.ones(geo.GetNumberOfPoints())
             name = "Pressure"
             add_array(geo, num, name)
-            fn = join(
-                self.p["f_out"], self.p["interfaces"]["load_perturbation"]
-            )
+            fn = join(self.p["f_out"], self.p["interfaces"]["load_perturbation"])
             write_geo(fn, geo)
 
-    def step(self, name, i, t, times):
+    def step(self, name, i, t, n, times):
         if name not in self.fields:
             raise ValueError("Unknown step option " + name)
 
@@ -334,7 +358,7 @@ class svFSI(Simulation):
         if name == "fluid":
             self.set_fluid(i, t)
         elif name == "solid":
-            self.set_solid(t)
+            self.set_solid(n, t)
         elif name == "mesh":
             self.set_mesh(i)
 
@@ -412,7 +436,7 @@ class svFSI(Simulation):
                 if f == "wss":
                     sol = []
                     for r in res:
-                        n_smooth = 0
+                        n_smooth = 1
                         c2p = r
                         for _ in range(n_smooth):
                             # map point data to cell data
@@ -422,8 +446,9 @@ class svFSI(Simulation):
 
                             # map cell data to point data
                             c2p = vtk.vtkCellDataToPointData()
-                            c2p.SetInputData(p2c)
+                            c2p.SetInputData(p2c.GetOutput())
                             c2p.Update()
+                            c2p = c2p.GetOutput()
 
                         # get element-wise wss maped to point data
                         sol += [v2n(c2p.GetPointData().GetArray("WSS"))]
@@ -460,7 +485,7 @@ class svFSI(Simulation):
 
         # time factor
         f_time = t / self.p["nmax"]
-    
+
         # custom flow profile
         if "profile_beta" in self.p:
             # limits
@@ -484,7 +509,7 @@ class svFSI(Simulation):
 
     def write_profile(self, t):
         # GlobalNodeID of inlet within fluid mesh
-        i_inlet = self.map((("int", "inlet"), ("vol", "fluid")))
+        i_inlet = self.map((("int", "start"), ("vol", "fluid")))
 
         # inlet points in current configuration
         points = deepcopy(self.points[("vol", "fluid")])[i_inlet]
@@ -564,7 +589,8 @@ class svFSI(Simulation):
 
         # calculate wss from const Poiseuille flow
         # todo: use actual profile (and local gradient??)
-        wss = 4.0 * self.p["fluid"]["mu"] * q / np.pi / rad[map_int] ** 3.0
+        wss = np.zeros((len(map_int), 3))
+        wss[:, -1] = 4.0 * self.p["fluid"]["mu"] * q / np.pi / rad[map_int] ** 3.0
         self.curr.add(("fluid", "wss", "int"), wss)
 
     def ctrl_vol(self, t):
@@ -617,7 +643,7 @@ class Solution:
             "cauchy": np.zeros(dim_ten) * np.nan,
             "stress": np.zeros(dim_ten) * np.nan,
             "strain": np.zeros(dim_ten) * np.nan,
-            "gr": np.ones((dim_sca, 50)) * np.nan
+            "gr": np.ones((dim_sca, 50)) * np.nan,
         }
         self.fields = self.zero.keys()
 
