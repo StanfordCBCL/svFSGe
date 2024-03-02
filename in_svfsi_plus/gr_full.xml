@@ -56,8 +56,42 @@
    <Max_iterations> 10 </Max_iterations> 
    <Tolerance> 1e-9 </Tolerance> 
 
-   <Constitutive_model type="GR_equilibrated"> </Constitutive_model>
-   <Density> 0.0 </Density> 
+   <Constitutive_model type="GR_equilibrated"> 
+      <example> 0 </example>
+      <n_t_pre> 1 </n_t_pre>
+      <n_t_end> 11 </n_t_end>
+      <coup_wss> false </coup_wss>
+      <KsKi> 1.0 </KsKi>
+      <mult> 1.0 </mult>
+      <rIo> 0.6468 </rIo>
+      <lo> 15.0 </lo>
+      <phieo> 0.34 </phieo>
+      <phimo> 0.33 </phimo>
+      <phico> 0.33 </phico>
+      <eta> 1.0 </eta>
+      <mu> 89.71 </mu>
+      <Get> 1.90 </Get>
+      <Gez> 1.62 </Gez>
+      <alpha> 0.522 </alpha>
+      <cm> 261.4 </cm>
+      <dm> 0.24 </dm>
+      <Gm> 1.20 </Gm>
+      <cc> 234.9 </cc>
+      <dc> 4.08 </dc>
+      <Gc> 1.25 </Gc>
+      <betat> 0.056 </betat>
+      <betaz> 0.067 </betaz>
+      <betad> 0.4385 </betad>
+      <lamM> 1.1 </lamM>
+      <lam0> 0.4 </lam0>
+      <curve> 0.0 </curve>
+      <hwaves> 0.0 </hwaves>
+      <Tmax> 0.0 </Tmax>
+      <KfKi> 0.0 </KfKi>
+      <inflam> 0.0 </inflam>
+      <aexp> 0.0 </aexp>
+      <delta> 0.0 </delta>
+   </Constitutive_model>
 
    <Output type="Spatial" >
      <GR> true </GR>
