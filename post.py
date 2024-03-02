@@ -243,8 +243,8 @@ def plot_res(data, coords, times, out, study):
 
     # loop all time steps
     t_max = min(times.values())
-    # for t in reversed(range(t_max)):
-    for t in [-1]:
+    for t in reversed(range(t_max)):
+    # for t in [-1]:
         # loop fields and plot
         fields = ["disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]
         for f in sorted(fields):
@@ -274,14 +274,15 @@ def plot_res(data, coords, times, out, study):
 
 def plot_single(data, coords, out, study, quant, locations, time=-1):
     # plot text
-    scale = 1.0
+    scale = [0.0]
     if quant == "disp":
         ylabel = ["Cir. displacement $\Delta\\theta$ [°]",
                   "Rad. displacement $\Delta r$ [mm]",
                   "Axi. displacement $\Delta z$ [mm]"]
+        scale = np.array([180.0 / np.pi, 1.0, 1.0])
     elif quant == "thick":
         ylabel =[ "Thickness [$\mu$m]"]
-        scale = 1e3
+        scale = [1e3]
     elif quant == "stim":
         ylabel = ["WSS stimulus $\Delta\\tau_w$ [-]",
                   "Intramular stimulus $\Delta\sigma_I$ [-]",
@@ -338,7 +339,8 @@ def plot_single(data, coords, out, study, quant, locations, time=-1):
                     ydata = ydata[time].T
                 if ny > 1:
                     ydata = ydata.T[i]
-                ydata *= scale
+                if np.any(scale):
+                    ydata *= scale[i]
                 
                 # check if hline should be plotted
                 hline = np.any(ydata <= 0.0) and np.any(ydata >= 0.0)
@@ -511,15 +513,16 @@ def main_arg(folder):
     inp = {}
     for f in folder[:-1]:
         fname = os.path.split(f)[-1]
-        if "gr" in fname:
-            inp[fname] = f
+        if "gr" in f:
+            inp["G&R"] = f
         else:
             sname = f.split(os.sep)[0]
             f_config = os.path.join(sname, "partitioned.json")
             # config = json.load(open(f_config))
             # name = os.path.splitext(config['mesh'])[0]
-            inp[sname] = f
+            inp["FSG"] = f
 
+    # pdb.set_trace()
     # collect all results
     data = {}
     coords = {}
