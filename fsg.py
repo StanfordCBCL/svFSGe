@@ -388,12 +388,12 @@ class FSG(svFSI):
 
         # linearly extrapolate from previous load increment
         vec_m1 = self.converged[-2].get(kind)
-        if n_sol == 2:
-            return 2.0 * vec_m0 - vec_m1
+        # if n_sol == 2:
+        return 2.0 * vec_m0 - vec_m1
 
         # quadratically extrapolate from previous two load increments
-        vec_m2 = self.converged[-3].get(kind)
-        return 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
+        # vec_m2 = self.converged[-3].get(kind)
+        # return 3.0 * vec_m0 - 3.0 * vec_m1 + vec_m2
 
     def predictor_tube(self, kind, t):
         d, f, p = kind
