@@ -22,6 +22,7 @@ rm -rf gr
 mkdir gr
 cp $SVFSI_DIR/Code/Source/svFSI/gr_equilibrated.cpp gr
 cp in_svfsi_plus/gr_full.xml gr
+cp in_geo/fsg_full_${1}.json gr
 
 # run simulation
 mpirun -np ${2} $SVFSI_DIR/build/svFSI-build/bin/svFSI in_svfsi_plus/gr_full.xml || true
