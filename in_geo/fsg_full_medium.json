@@ -6,7 +6,7 @@
     "n_seg": 1,
     "n_axi": 40,
     "n_cir": 64,
-    "n_rad_gr": 2,
+    "n_rad_gr": 1,
     "n_rad_tran": 16,
     "exp": 2,
     "quad": false
