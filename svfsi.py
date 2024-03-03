@@ -140,7 +140,8 @@ class svFSI(Simulation):
                 os.makedirs(self.p[f])
 
         # copy configureation files
-        shutil.copytree(self.p["paths"]["in_petsc"], join(self.p["f_out"], "in_petsc"))
+        for f in ["in_petsc", "in_svfsi"]:
+            shutil.copytree(self.p["paths"][f], join(self.p["f_out"], f))
 
         # generate and initialize mesh
         self.mesh_p = generate_mesh(join(self.p["paths"]["in_geo"], self.p["mesh"]))
@@ -366,7 +367,7 @@ class svFSI(Simulation):
         exe = ["mpiexec", "-np", str(self.p["n_procs"][name])]
         # exe = ["mpiexec", "--use-hwthread-cpus"]
         exe += [join(self.p["paths"]["exe"], self.p["exe"][name])]
-        exe += [join(self.p["paths"]["in_svfsi"], self.p["inp"][name])]
+        exe += [join("in_svfsi", self.p["inp"][name])]
 
         t_start = time.time()
         if self.p["debug"]:
