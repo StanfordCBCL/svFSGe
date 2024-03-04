@@ -12,7 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from matplotlib.ticker import StrMethodFormatter
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 
@@ -30,6 +30,31 @@ plt.rcParams.update(
 )
 # plt.style.use("fivethirtyeight")
 
+# field descriptions
+f_labels = {
+    "disp": [
+        "Cir. displacement $\Delta\\theta$ [°]",
+        "Rad. displacement $\Delta r$ [mm]",
+        "Axi. displacement $\Delta z$ [mm]",
+    ],
+    "thick": ["Thickness [$\mu$m]"],
+    "stim": [
+        "WSS stimulus $\Delta\\tau_w$ [-]",
+        "Intramular stimulus $\Delta\sigma_I$ [-]",
+        "Stimulus ratio $K_{\\tau\sigma}$ [-]",
+    ],
+    "jac": ["Jacobian [-]"],
+    "pk2": [
+        "Cir. 2PK Stress [kPa]",
+        "Rad. 2PK Stress [kPa]",
+        "Axi. 2PK Stress [kPa]",
+    ],
+    "lagrange": ["Lagrange multiplier $p$ [kPa]"],
+    "phic": ["Collagen mass fraction $\phi^c_h$ [-]"],
+}
+f_comp = {key: len(value) for key, value in f_labels.items()}
+f_scales = {"disp": np.array([180.0 / np.pi, 1.0, 1.0]), "thick": [1e3]}
+titles = {"gr": "G\&R", "partitioned": "FSGe"}
 
 def read_xml_file(file_path):
     with open(file_path) as fd:
@@ -294,73 +319,52 @@ def plot_res(data, coords, times, param, out, study):
             for lr in loc_rad:
                 for la in loc_axi:
                     plot_points = [(lc, lr, la) for lc in loc_cir]
-                    plot_single(data, coords, param, out, study, f, plot_points, t)
+                    for dim in range(f_comp[f]):
+                        plot_single(
+                            data, coords, param, out, study, f, plot_points, t, dim
+                        )
 
             if study == "single":
                 # plot circumferential ring
                 for lr in loc_rad:
                     for la in loc_axi:
                         plot_cir = [(":", lr, la)]
-                        plot_single(data, coords, param, out, study, f, plot_cir, t)
+                        for dim in range(f_comp[f]):
+                            plot_single(
+                                data, coords, param, out, study, f, plot_cir, t, dim
+                            )
 
                 # plot along radius
                 for la in loc_axi:
                     plot_rad = [(lc, ":", la) for lc in loc_cir]
-                    plot_single(data, coords, param, out, study, f, plot_rad, t)
+                    for dim in range(f_comp[f]):
+                        plot_single(
+                            data, coords, param, out, study, f, plot_rad, t, dim
+                        )
 
                 # plot along axial lines
                 for lr in loc_rad:
                     plot_axi = [(lc, lr, ":") for lc in loc_cir]
-                    plot_single(data, coords, param, out, study, f, plot_axi, t)
+                    for dim in range(f_comp[f]):
+                        plot_single(
+                            data, coords, param, out, study, f, plot_axi, t, dim
+                        )
 
 
-def plot_single(data, coords, param, out, study, quant, locations, time=-1):
-    # plot text
-    scale = [0.0]
-    if quant == "disp":
-        ylabel = [
-            "Cir. displacement $\Delta\\theta$ [°]",
-            "Rad. displacement $\Delta r$ [mm]",
-            "Axi. displacement $\Delta z$ [mm]",
-        ]
-        scale = np.array([180.0 / np.pi, 1.0, 1.0])
-    elif quant == "thick":
-        ylabel = ["Thickness [$\mu$m]"]
-        scale = [1e3]
-    elif quant == "stim":
-        ylabel = [
-            "WSS stimulus $\Delta\\tau_w$ [-]",
-            "Intramular stimulus $\Delta\sigma_I$ [-]",
-            "Stimulus ratio $K_{\\tau\sigma}$ [-]",
-        ]
-    elif quant == "jac":
-        ylabel = ["Jacobian [-]"]
-    elif quant == "pk2":
-        ylabel = [
-            "Cir. 2PK Stress [kPa]",
-            "Rad. 2PK Stress [kPa]",
-            "Axi. 2PK Stress [kPa]",
-        ]
-    elif quant == "lagrange":
-        ylabel = ["Lagrange multiplier $p$ [kPa]"]
-    elif quant == "phic":
-        ylabel = ["Collagen mass fraction $\phi^c_h$ [-]"]
-    else:
-        raise RuntimeError("Unknown quantity: " + quant)
-    
-    titles = {"gr": "G\&R", "partitioned": "FSGe"}
-
+def plot_single(data, coords, param, out, study, quant, locations, time=-1, comp=0):
     # determine plot dimensions
     nx = len(data)
-    ny = len(ylabel)
+    ny = 1 # G&R vs FSGe
 
     fig, ax = plt.subplots(
-        ny, nx, figsize=(nx * 10, ny * 5), dpi=300, sharex="col", sharey="row"
+        ny, nx, figsize=(nx * 10, ny * 5), dpi=300, sharex=True, sharey=True
     )
     if nx == 1 and ny == 1:
         ax = [ax]
     for j, (n, res) in enumerate(data.items()):
-        title = titles[n.split("_")[0]] + ", $K_{\\tau\sigma} = " + param[n]["KsKi"] + "$"
+        title = (
+            titles[n.split("_")[0]] + ", $K_{\\tau\sigma} = " + param[n]["KsKi"] + "$"
+        )
         for i in range(ny):
             # select plot position
             if nx == 1:
@@ -378,7 +382,10 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     return
 
                 # get data for y-axis
-                ydata = res[lc][quant].copy()
+                if f_comp[quant] > 1:
+                    ydata = res[lc][quant][:, comp].copy()
+                else:
+                    ydata = res[lc][quant].copy()
                 time_str = ""
                 if ":" in lc:
                     if time == -1:
@@ -386,17 +393,17 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     time_str = "_t" + str(time)
                     if time > len(ydata) - 1:
                         continue
-                    ydata = ydata[time].T
-                if ny > 1:
-                    ydata = ydata.T[i]
-                if np.any(scale):
-                    ydata *= scale[i]
+                    ydata = ydata[time]
+                if quant in f_scales:
+                    ydata *= f_scales[quant][comp]
 
                 # check if hline should be plotted
                 hline = np.any(ydata <= 0.0) and np.any(ydata >= 0.0)
 
                 # get data for x-axis
                 fname = quant
+                if f_comp[quant] > 1:
+                    fname += "_d" + str(comp)
                 loc = list(lc)
                 if study == "single":
                     if ":" in lc:
@@ -448,10 +455,10 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     # assume all locations provided are circumferential
                     fname += "_".join([""] + loc[1:])
                     colors = {
-                        j: plt.cm.tab10(i)
-                        for i, j in zip([0, 1, 3, 2], range(0, 12, 3))
+                        l: plt.cm.tab10(k)
+                        for k, l in zip([0, 1, 3, 2], range(0, 12, 3))
                     }
-                    if quant == "disp" and i == 0:
+                    if quant == "disp" and comp == 0:
                         styles = {0: "-", 3: "-", 6: ":", 9: "-"}
                     else:
                         styles = {0: "-", 3: "-", 6: "-", 9: ":"}
@@ -476,12 +483,12 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
             if i == ny - 1:
                 ax[pos].set_xlabel(xlabel)
             if j == 0:
-                ax[pos].set_ylabel(ylabel[i])
+                ax[pos].set_ylabel(f_labels[quant][comp])
     plt.tight_layout()
     fname += time_str + ".png"
-    print(fname)
     fig.savefig(os.path.join(out, fname), bbox_inches="tight")
     plt.cla()
+    print(fname)
 
 
 def main():
@@ -589,7 +596,7 @@ def collect_simulations(folder):
         inp[fname] = dir_name
         p_xml[fname] = read_xml_file(f_p_xml)
         p_json[fname] = read_json_file(f_p_json)
-    
+
     # extract only relevant parameters
     param = {}
     for f in inp.keys():
@@ -606,7 +613,7 @@ def main_arg(folder):
     out, inp, param = collect_simulations(folder)
 
     # collect all results
-    data = {}
+    data = OrderedDict()
     coords = {}
     times = {}
     for n, o in inp.items():
