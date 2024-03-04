@@ -25,7 +25,7 @@ plt.rcParams.update(
         "text.usetex": True,
         "font.family": "serif",
         "font.serif": "Computer Modern Roman",
-        "font.size": 24,
+        "font.size": 21,
     }
 )
 # plt.style.use("fivethirtyeight")
@@ -55,6 +55,7 @@ f_labels = {
 f_comp = {key: len(value) for key, value in f_labels.items()}
 f_scales = {"disp": np.array([180.0 / np.pi, 1.0, 1.0]), "thick": [1e3]}
 titles = {"gr": "G\&R", "partitioned": "FSGe"}
+
 
 def read_xml_file(file_path):
     with open(file_path) as fd:
@@ -353,138 +354,126 @@ def plot_res(data, coords, times, param, out, study):
 
 def plot_single(data, coords, param, out, study, quant, locations, time=-1, comp=0):
     # determine plot dimensions
-    nx = len(data)
-    ny = 1 # G&R vs FSGe
+    ny = len(np.unique([k.split("_")[0] for k in data.keys()]))
+    nx = len(data) // ny
 
     fig, ax = plt.subplots(
-        ny, nx, figsize=(nx * 10, ny * 5), dpi=300, sharex=True, sharey=True
+        ny, nx, figsize=(nx * 10, ny * 4), dpi=300, sharex=True, sharey=True
     )
     if nx == 1 and ny == 1:
         ax = [ax]
-    for j, (n, res) in enumerate(data.items()):
-        title = (
-            titles[n.split("_")[0]] + ", $K_{\\tau\sigma} = " + param[n]["KsKi"] + "$"
-        )
-        for i in range(ny):
-            # select plot position
-            if nx == 1:
-                pos = i
-            elif ny == 1:
-                pos = j
+    for i_data, (n, res) in enumerate(data.items()):
+        title = titles[n.split("_")[0]]
+        title += ", $K_{\\tau\sigma} = " + param[n]["KsKi"] + "$"
+
+        if ny > 1:
+            pos = np.unravel_index(i_data, (ny, nx))
+        else:
+            pos = (i_data,)
+
+        # loop mesh positions
+        for lc in locations:
+            # skip if no data available
+            if quant not in res[lc]:
+                return
+
+            # get data for y-axis
+            if f_comp[quant] > 1:
+                ydata = res[lc][quant][:, comp].copy()
             else:
-                pos = (i, j)
+                ydata = res[lc][quant].copy()
+            time_str = ""
+            if ":" in lc:
+                if time == -1:
+                    time = len(ydata) - 1
+                time_str = "_t" + str(time)
+                if time > len(ydata) - 1:
+                    continue
+                ydata = ydata[time]
+            if quant in f_scales:
+                ydata *= f_scales[quant][comp]
 
-            # loop mesh positions
-            for lc in locations:
-                # skip if no data available
-                if quant not in res[lc]:
-                    # print("quantity " + quant + " not found at location " + str(lc))
-                    return
-
-                # get data for y-axis
-                if f_comp[quant] > 1:
-                    ydata = res[lc][quant][:, comp].copy()
-                else:
-                    ydata = res[lc][quant].copy()
-                time_str = ""
+            # get data for x-axis
+            fname = quant
+            loc = list(lc)
+            if study == "single":
                 if ":" in lc:
-                    if time == -1:
-                        time = len(ydata) - 1
-                    time_str = "_t" + str(time)
-                    if time > len(ydata) - 1:
-                        continue
-                    ydata = ydata[time]
-                if quant in f_scales:
-                    ydata *= f_scales[quant][comp]
-
-                # check if hline should be plotted
-                hline = np.any(ydata <= 0.0) and np.any(ydata >= 0.0)
-
+                    # plotting along a coordinate axis
+                    xdata = coords[n][lc].copy()
+                    dim = loc.index(":")
+                    loc.remove(":")
+                    if dim == 0:
+                        xlabel = "Vessel circumference [°]"
+                        xdata *= 180 / np.pi
+                        xdata = np.append(xdata, 360)
+                        ydata = np.append(ydata, [ydata[0]], axis=0)
+                        dphi = 45
+                        xticks = np.arange(0, 360 + dphi, dphi).astype(int)
+                    elif dim == 1:
+                        xlabel = "Vessel radius [mm]"
+                        xticks = xdata
+                    elif dim == 2:
+                        xlabel = "Vessel length [mm]"
+                        xticks = [0, 2, 4, 6, 7.5, 9, 11, 13, 15]
+                    dim_names = ["cir", "rad", "axi"]
+                    fname += "_" + dim_names[dim]
+                else:
+                    # plotting a single point over all load steps
+                    nd = len(ydata)
+                    n10 = int(np.log(nd) / np.log(10))
+                    xdata = np.arange(0, nd)
+                    xlabel = "Load step [-]"
+                    if nd <= 10:
+                        xticks = np.arange(0, nd, 1)
+                    else:
+                        xticks = np.arange(0, nd, nd // 10**n10 * 10 ** (n10 - 1))
+                    fname += "_load"
+            elif study == "kski":
                 # get data for x-axis
-                fname = quant
-                if f_comp[quant] > 1:
-                    fname += "_d" + str(comp)
-                loc = list(lc)
-                if study == "single":
-                    if ":" in lc:
-                        # plotting along a coordinate axis
-                        xdata = coords[n][lc].copy()
-                        dim = loc.index(":")
-                        loc.remove(":")
-                        if dim == 0:
-                            xlabel = "Vessel circumference [°]"
-                            xdata *= 180 / np.pi
-                            xdata = np.append(xdata, 360)
-                            ydata = np.append(ydata, [ydata[0]], axis=0)
-                            dphi = 45
-                            xticks = np.arange(0, 360 + dphi, dphi).astype(int)
-                        elif dim == 1:
-                            xlabel = "Vessel radius [mm]"
-                            xticks = xdata
-                        elif dim == 2:
-                            xlabel = "Vessel length [mm]"
-                            xticks = [0, 2, 4, 6, 7.5, 9, 11, 13, 15]
-                        dim_names = ["cir", "rad", "axi"]
-                        fname += "_" + dim_names[dim]
-                    else:
-                        # plotting a single point over all load steps
-                        nd = len(ydata)
-                        n10 = int(np.log(nd) / np.log(10))
-                        xdata = np.arange(0, nd)
-                        xlabel = "Load step [-]"
-                        if nd <= 10:
-                            xticks = np.arange(0, nd, 1)
-                        else:
-                            xticks = np.arange(0, nd, nd // 10**n10 * 10 ** (n10 - 1))
-                        fname += "_load"
-                elif study == "kski":
-                    # get data for x-axis
-                    xdata = np.linspace(0.0, 1.0, 5)
-                    xlabel = "$K_{\\tau\sigma}$"
-                    xticks = [0, 0.25, 0.5, 0.75, 1]
+                xdata = np.linspace(0.0, 1.0, 5)
+                xlabel = "$K_{\\tau\sigma}$"
+                xticks = [0, 0.25, 0.5, 0.75, 1]
+            else:
+                raise ValueError("unknown study: " + study)
+
+            # assemble filename
+            loc = np.array(loc).astype(str).tolist()
+            if len(locations) == 1:
+                fname += "_".join([""] + loc)
+                stl = "-"
+                col = "k"
+            else:
+                # assume all locations provided are circumferential
+                fname += "_".join([""] + loc[1:])
+                colors = {
+                    l: plt.cm.tab10(k) for k, l in zip([0, 1, 3, 2], range(0, 12, 3))
+                }
+                if quant == "disp" and comp == 0:
+                    styles = {0: "-", 3: "-", 6: ":", 9: "-"}
                 else:
-                    raise ValueError("unknown study: " + study)
+                    styles = {0: "-", 3: "-", 6: "-", 9: ":"}
+                stl = styles[lc[0]]
+                col = colors[lc[0]]
 
-                # assemble filename
-                loc = np.array(loc).astype(str).tolist()
-                if len(locations) == 1:
-                    fname += "_".join([""] + loc)
-                    stl = "-"
-                    col = "k"
-                else:
-                    # assume all locations provided are circumferential
-                    fname += "_".join([""] + loc[1:])
-                    colors = {
-                        l: plt.cm.tab10(k)
-                        for k, l in zip([0, 1, 3, 2], range(0, 12, 3))
-                    }
-                    if quant == "disp" and comp == 0:
-                        styles = {0: "-", 3: "-", 6: ":", 9: "-"}
-                    else:
-                        styles = {0: "-", 3: "-", 6: "-", 9: ":"}
-                    stl = styles[lc[0]]
-                    col = colors[lc[0]]
+            # plot!
+            try:
+                ax[pos].plot(xdata, ydata, stl, color=col, linewidth=2)
+            except:
+                pdb.set_trace()
 
-                # plot!
-                try:
-                    ax[pos].plot(xdata, ydata, stl, color=col, linewidth=2)
-                except:
-                    pdb.set_trace()
-
-            # plot lines
-            ax[pos].grid(True)
-            if hline:
-                ax[pos].axhline(0, color="black", zorder=2)
-            ax[pos].set_xticks(xticks)
-            ax[pos].set_xticklabels([str(x) for x in xticks])
-            ax[pos].set_xlim([np.min(xdata), np.max(xdata)])
-            if i == 0:
-                ax[pos].set_title(title)
-            if i == ny - 1:
-                ax[pos].set_xlabel(xlabel)
-            if j == 0:
-                ax[pos].set_ylabel(f_labels[quant][comp])
+        # plot lines
+        ax[pos].grid(True)
+        ax[pos].set_xticks(xticks)
+        ax[pos].set_xticklabels([str(x) for x in xticks])
+        ax[pos].set_xlim([np.min(xdata), np.max(xdata)])
+        ax[pos].set_title(title)
+        if ny == 0 or pos[0] == ny - 1:
+            ax[pos].set_xlabel(xlabel)
+        if pos[-1] == 0:
+            ax[pos].set_ylabel(f_labels[quant][comp])
     plt.tight_layout()
+    if f_comp[quant] > 1:
+        fname += "_d" + str(comp)
     fname += time_str + ".png"
     fig.savefig(os.path.join(out, fname), bbox_inches="tight")
     plt.cla()
