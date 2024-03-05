@@ -52,6 +52,7 @@ f_labels = {
     "lagrange": ["Lagrange multiplier $p$ [kPa]"],
     "phic": ["Collagen mass fraction $\phi^c_h$ [-]"],
 }
+s_labels = {"KsKi": "Stimulus ratio $K_{\\tau\sigma}$ [-]"}
 f_comp = {key: len(value) for key, value in f_labels.items()}
 f_scales = {"disp": np.array([180.0 / np.pi, 1.0, 1.0]), "thick": [1e3]}
 titles = {"gr": "G\&R", "partitioned": "FSGe"}
@@ -300,7 +301,7 @@ def post_process(f_out):
 
 
 def plot_res(data, coords, times, param, out, study):
-    # cir locations: o' clocks
+    # cir locations: times on the clock
     loc_cir = range(0, 12, 3)
 
     # rad locations: ["in", "out"]
@@ -364,12 +365,13 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1, comp
         ax = [ax]
     for i_data, (n, res) in enumerate(data.items()):
         title = titles[n.split("_")[0]]
-        title += ", $K_{\\tau\sigma} = " + param[n]["KsKi"] + "$"
+        if study == "single":
+            title += ", $K_{\\tau\sigma} = " + param[n]["KsKi"] + "$"
 
         if ny > 1:
             pos = np.unravel_index(i_data, (ny, nx))
         else:
-            pos = (i_data,)
+            pos = i_data
 
         # loop mesh positions
         for lc in locations:
@@ -428,13 +430,12 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1, comp
                     else:
                         xticks = np.arange(0, nd, nd // 10**n10 * 10 ** (n10 - 1))
                     fname += "_load"
-            elif study == "kski":
-                # get data for x-axis
-                xdata = np.linspace(0.0, 1.0, 5)
-                xlabel = "$K_{\\tau\sigma}$"
-                xticks = [0, 0.25, 0.5, 0.75, 1]
             else:
-                raise ValueError("unknown study: " + study)
+                if study not in s_labels:
+                    raise ValueError("unknown study: " + study)
+                xlabel = s_labels[study]
+                xdata = param[n][study]
+                xticks = xdata
 
             # assemble filename
             loc = np.array(loc).astype(str).tolist()
@@ -467,9 +468,9 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1, comp
         ax[pos].set_xticklabels([str(x) for x in xticks])
         ax[pos].set_xlim([np.min(xdata), np.max(xdata)])
         ax[pos].set_title(title)
-        if ny == 0 or pos[0] == ny - 1:
+        if ny == 1 or pos[0] == ny - 1:
             ax[pos].set_xlabel(xlabel)
-        if pos[-1] == 0:
+        if isinstance(pos, int) or pos[-1] == 0:
             ax[pos].set_ylabel(f_labels[quant][comp])
     plt.tight_layout()
     if f_comp[quant] > 1:
@@ -480,82 +481,42 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1, comp
     print(fname)
 
 
-def main():
-    # set study
-    # for kski in np.linspace(0.0, 1.0, 5).astype(str):
-    # print("\n\nplotting kski " + str(kski) + "\n")
-
-    # folder = "/Users/pfaller/work/repos/FSGe/study_aneurysm"
-    # geo = "coarse"
-    # phi = "0.7"
-
-    # define paths
-    # fpath = os.path.join(folder, geo,  "phi_" + phi, "kski_" + kski)
-    fpath = "/Users/pfaller/work/repos/FSG/new_study_aneurysm/coarse_kski_1.0"
-    inp = {
-        "G&R": os.path.join(fpath, "gr"),
-        "FSGe": os.path.join(fpath, "partitioned", "partitioned.json"),
-    }
-    out = os.path.join(fpath, "comparison")
-
-    # create output folder
-    os.makedirs(out, exist_ok=True)
+def main_param(folder, p_name):
+    # collect simulations
+    out, inp, param = collect_simulations(folder)
 
     # collect all results
-    data = {}
+    data = OrderedDict()
     coords = {}
     times = {}
     for n, o in inp.items():
         data[n], coords[n], times[n] = post_process(o)
 
-    plot_res(data, coords, times, out, "single")
+    # collect all parameters
+    study_params = sorted([param[n][p_name] for n in data.keys()])
+    assert len(np.unique(study_params)) == len(study_params), "Duplicate parameters"
 
-
-def main_param():
-    print("\n\nplotting all kski\n")
-    # set study
-    folder = "/Users/pfaller/work/repos/FSGe/study_aneurysm"
-    geo = "coarse"
-    phi = "0.7"
-
-    kski = np.linspace(0.0, 1.0, 5)
-
-    # define paths
-    out = os.path.join(folder, geo, "phi_" + phi, "comparison")
-    os.makedirs(out, exist_ok=True)
-
-    # plot elastin insult (axi and cir)
-    plot_insult(out)
-
-    data = {}
-    for k in kski:
-        fpath = os.path.join(folder, geo, "phi_" + phi, "kski_" + str(k))
-        inp = {
-            "G&R": os.path.join(fpath, "gr"),
-            "FSGe": os.path.join(fpath, "partitioned", "partitioned.json"),
-        }
-        data[k] = {}
-        for n, o in inp.items():
-            data[k][n], coords = post_process(o)
+    # get study name
+    study_name = np.unique([n.split("_")[0] for n in data.keys()])
+    assert len(study_name) == 1, "Multiple study names"
+    study_name = study_name[0]
 
     # collect data for all parameter variations
     data_sorted = {}
-    params = sorted(data.keys())
-    sims = data[params[0]].keys()
-    for nam in sims:
-        data_sorted[nam] = {}
-        for loc in data[params[0]][nam].keys():
-            data_sorted[nam][loc] = {}
-            for quant in data[params[0]][nam][loc].keys():
-                data_sorted[nam][loc][quant] = []
+    for loc in data[n].keys():
+        if ":" not in loc:
+            data_sorted[loc] = {}
+            for f in data[n][loc].keys():
+                data_sorted[loc][f] = np.zeros((len(study_params), f_comp[f]))
+    for n in data.keys():
+        ip = study_params.index(param[n][p_name])
+        for loc in data[n].keys():
+            if ":" not in loc:
+                for f in data[n][loc].keys():
+                    data_sorted[loc][f][ip] = data[n][loc][f][-1]
 
-                # append all parametric evaluations
-                for k in params:
-                    # extract last time step
-                    data_sorted[nam][loc][quant] += [data[k][nam][loc][quant][-1]]
-                data_sorted[nam][loc][quant] = np.array(data_sorted[nam][loc][quant])
-
-    plot_res(data_sorted, coords, out, "kski")
+    # pdb.set_trace()
+    plot_res({study_name: data_sorted}, coords, times, {study_name: {p_name: np.array(study_params, dtype=float)}}, out, "KsKi")
 
 
 def collect_simulations(folder):
@@ -652,13 +613,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Post-process FSGe simulation")
     parser.add_argument("out", nargs="+", default="None", help="svFSI output folder")
     parser.add_argument("-c", action="store_true", help="Plot convergence")
+    parser.add_argument("-p", type=str, help="Plot parametric study")
     args = parser.parse_args()
 
-    if not args.out:
-        # main_param()
-        main()
+    if args.c:
+        main_convergence(args.out)
+    elif args.p:
+        main_param(args.out, args.p)
     else:
-        if args.c:
-            main_convergence(args.out)
-        else:
-            main_arg(args.out)
+        main_arg(args.out, "single")
