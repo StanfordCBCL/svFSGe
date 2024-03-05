@@ -368,10 +368,12 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1, comp
         if study == "single":
             title += ", $K_{\\tau\sigma} = " + param[n]["KsKi"] + "$"
 
-        if ny > 1:
-            pos = np.unravel_index(i_data, (ny, nx))
-        else:
+        if ny == 1 and nx == 1:
             pos = i_data
+        elif ny == 1 or nx == 1:
+            pos = (i_data,)
+        else:
+            pos = np.unravel_index(i_data, (ny, nx))
 
         # loop mesh positions
         for lc in locations:
@@ -459,7 +461,8 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1, comp
             # plot!
             try:
                 ax[pos].plot(xdata, ydata, stl, color=col, linewidth=2)
-            except:
+            except Exception as e:
+                print(e)
                 pdb.set_trace()
 
         # plot lines
@@ -470,7 +473,7 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1, comp
         ax[pos].set_title(title)
         if ny == 1 or pos[0] == ny - 1:
             ax[pos].set_xlabel(xlabel)
-        if isinstance(pos, int) or pos[-1] == 0:
+        if nx == 1 or pos[-1] == 0:
             ax[pos].set_ylabel(f_labels[quant][comp])
     plt.tight_layout()
     if f_comp[quant] > 1:
@@ -493,30 +496,32 @@ def main_param(folder, p_name):
         data[n], coords[n], times[n] = post_process(o)
 
     # collect all parameters
-    study_params = sorted([param[n][p_name] for n in data.keys()])
-    assert len(np.unique(study_params)) == len(study_params), "Duplicate parameters"
+    study_params = np.unique([param[n][p_name] for n in data.keys()]).tolist()
 
-    # get study name
-    study_name = np.unique([n.split("_")[0] for n in data.keys()])
-    assert len(study_name) == 1, "Multiple study names"
-    study_name = study_name[0]
+    # get simulations names
+    study_names = np.unique([n.split("_")[0] for n in data.keys()]).tolist()
+    assert len(study_params) * len(study_names) == len(data), "Inconsistent data"
 
     # collect data for all parameter variations
     data_sorted = {}
-    for loc in data[n].keys():
-        if ":" not in loc:
-            data_sorted[loc] = {}
-            for f in data[n][loc].keys():
-                data_sorted[loc][f] = np.zeros((len(study_params), f_comp[f]))
+    param_sorted = {}
+    for s in study_names:
+        data_sorted[s] = {}
+        for loc in data[n].keys():
+            if ":" not in loc:
+                data_sorted[s][loc] = {}
+                for f in data[n][loc].keys():
+                    data_sorted[s][loc][f] = np.zeros((len(study_params), f_comp[f]))
     for n in data.keys():
-        ip = study_params.index(param[n][p_name])
+        i_s = n.split("_")[0]
+        i_p = study_params.index(param[n][p_name])
         for loc in data[n].keys():
             if ":" not in loc:
                 for f in data[n][loc].keys():
-                    data_sorted[loc][f][ip] = data[n][loc][f][-1]
+                    data_sorted[i_s][loc][f][i_p] = data[n][loc][f][-1]
+        param_sorted[i_s] = {p_name: np.array(study_params, dtype=float)}
 
-    # pdb.set_trace()
-    plot_res({study_name: data_sorted}, coords, times, {study_name: {p_name: np.array(study_params, dtype=float)}}, out, "KsKi")
+    plot_res(data_sorted, coords, times, param_sorted, out, "KsKi")
 
 
 def collect_simulations(folder):
