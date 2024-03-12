@@ -39,7 +39,7 @@ f_labels = {
     ],
     "thick": ["Thickness [$\mu$m]"],
     "stim": [
-        "Stimulus ratio $K_{\\tau\sigma}$ [-]",
+        "Gain ratio $K_{\\tau\sigma}$ [-]",
         "Intramular stimulus $\Delta\sigma_I$ [-]",
         "WSS stimulus $\Delta\\tau_w$ [-]",
     ],
@@ -51,11 +51,15 @@ f_labels = {
     ],
     "lagrange": ["Lagrange multiplier $p$ [kPa]"],
     "phic": ["Collagen mass fraction $\phi^c_h$ [-]"],
+    "pressure": ["Pressure [mmHg]"],
+    "velocity": ["Velocity magnitude $u$ [mm/s]"],
 }
 s_labels = {"KsKi": "Stimulus ratio $K_{\\tau\sigma}$ [-]"}
 f_comp = {key: len(value) for key, value in f_labels.items()}
-f_scales = {"disp": np.array([180.0 / np.pi, 1.0, 1.0]), "thick": [1e3]}
+f_scales = {"disp": np.array([180.0 / np.pi, 1.0, 1.0]), "thick": [1e3], "pressure": [1.0/0.1333]}
 titles = {"gr": "G\&R", "partitioned": "FSGe"}
+fields = {"fluid": ["pressure", "velocity"],
+    "solid": ["disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]}
 
 
 def read_xml_file(file_path):
@@ -116,7 +120,7 @@ def read_config(json):
     return svFSI(f_params=json, load=True)
 
 
-def read_res(fname, fsge):
+def read_res(fname, fsge, n_domain="solid"):
     # read all simulation results at all time steps
     res = []
     for fn in sorted(glob.glob(fname)):
@@ -125,14 +129,16 @@ def read_res(fname, fsge):
 
         # extract solid domain
         if fsge:
-            solid = threshold(geo, 1.0, "ids_solid").GetOutput()
+            domain = threshold(geo, 1.0, "ids_" + n_domain).GetOutput()
         else:
-            solid = geo
-        res += [solid]
+            if n_domain != "solid":
+                raise ValueError("Unknown G&R domain: " + n_domain)
+            domain = geo
+        res += [domain]
     return res
 
 
-def get_ids(pts_xyz):
+def get_ids(pts_xyz, domain="solid"):
     # coordinates of all points (in reference configuration)
     pts_cra = xyz2cra(pts_xyz.T).T
 
@@ -141,14 +147,22 @@ def get_ids(pts_xyz):
     ri = np.min(pts_cra[:, 1])
     h = np.max(pts_cra[:, 2])
 
-    # circumferential coordinates of points to export: 0, 3, 6, 9 o'clock
-    p_cir = {0: 0.0, 3: 0.5 * np.pi, 6: np.pi, 9: 1.5 * np.pi}
+    if domain == "solid":
+        # circumferential coordinates of points to export: 0, 3, 6, 9 o'clock
+        p_cir = {0: 0.0, 3: 0.5 * np.pi, 6: np.pi, 9: 1.5 * np.pi}
 
-    # radial coordinates of points to export: inside, outside
-    p_rad = {"out": ro, "in": ri}
+        # radial coordinates of points to export: inside, outside
+        p_rad = {"out": ro, "in": ri}
 
-    # axial coordinates of points to export: inlet, mid-point, outlet
-    p_axi = {"start": 0.0, "mid": h / 2, "end": h}
+        # axial coordinates of points to export: inlet, mid-point, outlet
+        p_axi = {"start": 0.0, "mid": h / 2, "end": h}
+    elif domain == "fluid":
+        # plot along centerline
+        p_cir = {0: 0.0}
+        p_rad = {"center": 0.0}
+        p_axi = {"start": 0.0, "mid": h / 2, "end": h}
+    else:
+        raise ValueError("Unknown domain: " + domain)
 
     # collect all point coordinates
     locations = {}
@@ -185,16 +199,10 @@ def get_ids(pts_xyz):
                 crd
             )
 
-            # # limit angle to [-pi, pi)
-            # if dim == 0:
-            #     coords[loc] += np.pi
-            #     coords[loc] %= np.pi * 2.0
-            #     coords[loc] -= np.pi
-
     return ids, coords
 
 
-def get_results(results, pts, ids):
+def get_results(results, pts, ids, domain="solid"):
     # get post-processed quantities at all extracted locations
     post = {}
     for loc in ids.keys():
@@ -202,7 +210,10 @@ def get_results(results, pts, ids):
 
     # get results at all time steps
     for res in results:
-        extract_results(post, res, pts, ids)
+        if domain == "solid":
+            extract_results_solid(post, res, pts, ids)
+        elif domain == "fluid":
+            extract_results_fluid(post, res, pts, ids)
 
     # convert to numpy arrays
     for loc in post.keys():
@@ -212,7 +223,18 @@ def get_results(results, pts, ids):
     return post
 
 
-def extract_results(post, res, pts, ids):
+def extract_results_fluid(post, res, pts, ids):
+    pressure = v2n(res.GetPointData().GetArray("Pressure"))
+    velocity = v2n(res.GetPointData().GetArray("Velocity"))
+    # velocity = xyz2cra(velocity.T)
+    velocity = np.linalg.norm(velocity, axis=1)
+
+    for loc, pt in ids.items():
+        post[loc]["pressure"] += [pressure[pt]]
+        post[loc]["velocity"] += [velocity[pt]]
+
+
+def extract_results_solid(post, res, pts, ids):
     # get nodal displacements
     d = v2n(res.GetPointData().GetArray("Displacement"))
 
@@ -272,7 +294,7 @@ def extract_scalar(scalar, res, pts, ids, mode):
             scalar["p_" + m_thick] += [np.linalg.norm(d_out - d_in)]
 
 
-def post_process(f_out):
+def post_process(f_out, domain="solid"):
     # check if FSGe or conventional G&R results
     if "gr" in f_out:
         fsge = False
@@ -282,7 +304,7 @@ def post_process(f_out):
         fname = os.path.join(f_out, "tube_*.vtu")
 
     # read results from file
-    res = read_res(fname, fsge)
+    res = read_res(fname, fsge, domain)
     if not len(res):
         raise RuntimeError("No results found in " + f_out)
 
@@ -294,29 +316,37 @@ def post_process(f_out):
     pts = v2n(res[0].GetPoints().GetData())
 
     # get point and line ids
-    ids, coords = get_ids(pts)
+    ids, coords = get_ids(pts, domain)
 
     # extract displacements
-    return get_results(res, pts, ids), coords, len(res)
+    return get_results(res, pts, ids, domain), coords, len(res)
 
 
-def plot_res(data, coords, times, param, out, study):
-    # cir locations: times on the clock
-    loc_cir = range(0, 12, 3)
+def plot_res(data, coords, times, param, out, domain, study):
+    if domain == "solid":
+        # cir locations: times on the clock
+        loc_cir = range(0, 12, 3)
 
-    # rad locations: ["in", "out"]
-    loc_rad = ["in", "out"]
+        # rad locations: ["in", "out"]
+        loc_rad = ["in", "out"]
 
-    # axi locations: ["start", "mid", "end"]
-    loc_axi = ["mid"]
+        # axi locations: ["start", "mid", "end"]
+        loc_axi = ["mid"]
+    elif domain == "fluid":
+        loc_cir = [0]
+        loc_rad = ["center"]
+
+        # axi locations: ["start", "mid", "end"]
+        loc_axi = ["start", "mid", "end"]
+    else:
+        raise ValueError("Unknown domain: " + domain)
 
     # loop time steps
     t_max = min(times.values())
     # for t in reversed(range(t_max)):
     for t in [-1]:
         # loop fields and plot
-        fields = ["disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]
-        for f in sorted(fields):
+        for f in sorted(fields[domain]):
             # plot single points
             for lr in loc_rad:
                 for la in loc_axi:
@@ -351,7 +381,10 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
         nx = n_sim
         ny = len(data) // nx * f_comp[quant]
 
-    fs = (nx * 10, ny * 4)
+    if ny == 1:
+        fs = (nx * 10, 5)
+    else:
+        fs = (nx * 10, ny * 4)
     fig, ax = plt.subplots(ny, nx, figsize=fs, dpi=300, sharex=True, sharey="row")
     if nx == 1 and ny == 1:
         ax = [ax]
@@ -389,6 +422,8 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     ydata = ydata[time]
                 if quant in f_scales:
                     ydata *= f_scales[quant][j_data]
+                if np.isscalar(ydata):
+                    return
 
                 # get data for x-axis
                 fname = quant
@@ -400,17 +435,17 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                         dim = loc.index(":")
                         loc.remove(":")
                         if dim == 0:
-                            xlabel = "Vessel circumference [°]"
+                            xlabel = "Vessel circumference $\\varphi$ [°]"
                             xdata *= 180 / np.pi
                             xdata = np.append(xdata, 360)
                             ydata = np.append(ydata, [ydata[0]], axis=0)
                             dphi = 45
                             xticks = np.arange(0, 360 + dphi, dphi).astype(int)
                         elif dim == 1:
-                            xlabel = "Vessel radius [mm]"
-                            xticks = xdata
+                            xlabel = "Vessel radius $r$ [mm]"
+                            xticks = [xdata[0], xdata[-1]]
                         elif dim == 2:
-                            xlabel = "Vessel length [mm]"
+                            xlabel = "Vessel axial $z$ [mm]"
                             xticks = [0, 2, 4, 6, 7.5, 9, 11, 13, 15]
                         dim_names = ["cir", "rad", "axi"]
                         fname += "_" + dim_names[dim]
@@ -431,6 +466,15 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     xlabel = s_labels[study]
                     xdata = param[n][study]
                     xticks = xdata
+                    xref = [xdata[0], xdata[-1]]
+                    yref = None
+                    if quant == "phic":
+                        # add reference collagen mass fraction
+                        yref = 0.33
+                    if quant == "disp" and j_data == 1:
+                        yref = 0.0
+                    if yref is not None:
+                        ax[pos].plot(xref, [yref] * 2, "k-", linewidth=2)
 
                 # assemble filename
                 loc = np.array(loc).astype(str).tolist()
@@ -477,7 +521,7 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
     print(fname)
 
 
-def main_param(folder, p_name):
+def main_param(folder, p_name, domain="solid"):
     # collect simulations
     out, inp, param = collect_simulations(folder)
 
@@ -486,7 +530,7 @@ def main_param(folder, p_name):
     coords = {}
     times = {}
     for n, o in inp.items():
-        data[n], coords[n], times[n] = post_process(o)
+        data[n], coords[n], times[n] = post_process(o, domain)
 
     # collect all parameters
     study_params = np.unique([param[n][p_name] for n in data.keys()]).tolist()
@@ -514,7 +558,7 @@ def main_param(folder, p_name):
                     data_sorted[i_s][loc][f][i_p] = data[n][loc][f][-1]
         param_sorted[i_s] = {p_name: np.array(study_params, dtype=float)}
 
-    plot_res(data_sorted, coords, times, param_sorted, out, "KsKi")
+    plot_res(data_sorted, coords, times, param_sorted, out, domain, "KsKi")
 
 
 def collect_simulations(folder):
@@ -556,7 +600,7 @@ def collect_simulations(folder):
     return out, inp, param
 
 
-def main_arg(folder):
+def main_arg(folder, domain="solid"):
     # collect simulations
     out, inp, param = collect_simulations(folder)
 
@@ -565,9 +609,9 @@ def main_arg(folder):
     coords = {}
     times = {}
     for n, o in inp.items():
-        data[n], coords[n], times[n] = post_process(o)
+        data[n], coords[n], times[n] = post_process(o, domain)
 
-    plot_res(data, coords, times, param, out, "single")
+    plot_res(data, coords, times, param, out, domain, "single")
 
 
 def main_convergence(folder):
@@ -576,6 +620,7 @@ def main_convergence(folder):
 
     ydata = []
     labels = []
+    param = []
     for f in inp.keys():
         kski = data[f]["KsKi"]
         labels += ["$K_{\\tau\sigma}$ = " + kski]
@@ -584,12 +629,20 @@ def main_convergence(folder):
             n_it += [len(err)]
         print(kski, "{:.1f}".format(np.mean(n_it[2:])))
         ydata += [np.cumsum(n_it)]
+        param += [float(kski)]
 
     ydata = np.array(ydata).T
     xdata = np.arange(0, ydata.shape[0])
+    param = np.array(param)
 
-    fig, ax = plt.subplots(figsize=(20, 5), dpi=300)
-    ax.plot(xdata, ydata, linewidth=2)
+    fig, ax = plt.subplots(figsize=(12.5, 5), dpi=300)
+
+    # continuous color map
+    cstart = 0.3
+    cmap = (param + cstart) / (np.max(param) + cstart)
+    colors = plt.colormaps["Reds"](cmap)
+    for y, c in zip(ydata.T, colors):
+        ax.plot(xdata, y, color=c, linewidth=2)
     ax.grid(True)
     ax.set_xticks(xdata)
     ax.set_xlim([np.min(xdata), np.max(xdata)])
@@ -612,11 +665,13 @@ if __name__ == "__main__":
     parser.add_argument("out", nargs="+", default="None", help="svFSI output folder")
     parser.add_argument("-c", action="store_true", help="Plot convergence")
     parser.add_argument("-p", type=str, help="Plot parametric study")
+    parser.add_argument("-f", action="store_true", help="Plot fluid (instead of solid)")
     args = parser.parse_args()
 
+    domain = "fluid" if args.f else "solid"
     if args.c:
         main_convergence(args.out)
     elif args.p:
-        main_param(args.out, args.p)
+        main_param(args.out, args.p, domain)
     else:
-        main_arg(args.out)
+        main_arg(args.out, domain)
