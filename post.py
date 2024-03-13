@@ -33,33 +33,45 @@ plt.rcParams.update(
 # field descriptions
 f_labels = {
     "disp": [
-        "Cir. displacement $\Delta\\theta$ [°]",
-        "Rad. displacement $\Delta r$ [mm]",
-        "Axi. displacement $\Delta z$ [mm]",
+        "Disp. $d_\\theta$ [°]",
+        "Disp. $d_r$ [mm]",
+        "Disp. $d_z$ [mm]",
     ],
+    "disp_r": ["Disp. $d_r$ [mm]"],
     "thick": ["Thickness [$\mu$m]"],
     "stim": [
         "Gain ratio $K_{\\tau\sigma}$ [-]",
-        "Intramular stimulus $\Delta\sigma_I$ [-]",
-        "WSS stimulus $\Delta\\tau_w$ [-]",
+        "Stim. $\Delta\sigma_I$ [-]",
+        "Stim. $\Delta\\tau_w$ [-]",
     ],
     "jac": ["Jacobian [-]"],
     "pk2": [
-        "Cir. 2PK Stress [kPa]",
-        "Rad. 2PK Stress [kPa]",
-        "Axi. 2PK Stress [kPa]",
+        "2PK $S_\{\\theta\\theta\}$ [kPa]",
+        "2PK $S_\{rr\}$ [kPa]",
+        "2PK $S_\{zz\}$ [kPa]",
     ],
-    "lagrange": ["Lagrange multiplier $p$ [kPa]"],
-    "phic": ["Collagen mass fraction $\phi^c_h$ [-]"],
+    "lagrange": ["Lagrange $p$ [kPa]"],
+    "phic": ["Collagen $\phi^c_h$ [-]"],
     "pressure": ["Pressure [mmHg]"],
-    "velocity": ["Velocity magnitude $u$ [mm/s]"],
+    "velocity": ["Velocity $u$ [mm/s]"],
 }
-s_labels = {"KsKi": "Stimulus ratio $K_{\\tau\sigma}$ [-]"}
+s_labels = {"KsKi": "Gain ratio $K_{\\tau\sigma}$ [-]"}
 f_comp = {key: len(value) for key, value in f_labels.items()}
 f_scales = {"disp": np.array([180.0 / np.pi, 1.0, 1.0]), "thick": [1e3], "pressure": [1.0/0.1333]}
 titles = {"gr": "G\&R", "partitioned": "FSGe"}
 fields = {"fluid": ["pressure", "velocity"],
-    "solid": ["disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]}
+    "solid": ["disp_r", "disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]}
+
+
+def get_colormap(param):
+    # continuous color map
+    cstart = 0.3
+    cmap = (param + cstart) / (np.max(param) + cstart)
+    return plt.colormaps["Reds"](cmap)
+
+
+def rec_dict():
+    return defaultdict(rec_dict)
 
 
 def read_xml_file(file_path):
@@ -265,6 +277,7 @@ def extract_results_solid(post, res, pts, ids):
 
         # store values
         post[loc]["disp"] += [diff]
+        post[loc]["disp_r"] += [diff[1]]
         post[loc]["jac"] += [jac[pt]]
         post[loc]["pk2"] += [pk2_cra[pt].T]
         post[loc]["lagrange"] += [gr[pt, 30]]
@@ -369,6 +382,11 @@ def plot_res(data, coords, times, param, out, domain, study):
                 for lr in loc_rad:
                     plot_axi = [(lc, lr, ":") for lc in loc_cir]
                     plot_single(data, coords, param, out, study, f, plot_axi, t)
+            if study == "KsKi":
+                # plot along axial lines
+                plot_axi = [(lc, lr, ":") for lc in loc_cir]
+                plot_single(data, coords, param, out, study, f, plot_axi, t)
+
 
 
 def plot_single(data, coords, param, out, study, quant, locations, time=-1):
@@ -381,10 +399,13 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
         nx = n_sim
         ny = len(data) // nx * f_comp[quant]
 
-    if ny == 1:
-        fs = (nx * 10, 5)
+    if f_comp[quant] > 1:
+        h = 2.5
     else:
-        fs = (nx * 10, ny * 4)
+        h = 3
+    if ny == 1:
+        h = 3.5
+    fs = (nx * 10, ny * h)
     fig, ax = plt.subplots(ny, nx, figsize=fs, dpi=300, sharex=True, sharey="row")
     if nx == 1 and ny == 1:
         ax = [ax]
@@ -408,18 +429,22 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     return
 
                 # get data for y-axis
+                data_cp = np.array(res[lc][quant]).copy()
                 if f_comp[quant] > 1:
-                    ydata = res[lc][quant][:, j_data].copy()
+                    ydata = data_cp[:, j_data]
                 else:
-                    ydata = res[lc][quant].copy()
+                    ydata = data_cp
                 time_str = ""
                 if ":" in lc:
-                    if time == -1:
-                        time = len(ydata) - 1
-                    time_str = "_t" + str(time)
-                    if time > len(ydata) - 1:
-                        continue
-                    ydata = ydata[time]
+                    if study == "single":
+                        if time == -1:
+                            time = len(ydata) - 1
+                        time_str = "_t" + str(time)
+                        if time > len(ydata) - 1:
+                            continue
+                        ydata = ydata[time]
+                    else:
+                        ydata = ydata.T
                 if quant in f_scales:
                     ydata *= f_scales[quant][j_data]
                 if np.isscalar(ydata):
@@ -428,38 +453,40 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                 # get data for x-axis
                 fname = quant
                 loc = list(lc)
-                if study == "single":
-                    if ":" in lc:
-                        # plotting along a coordinate axis
+                if ":" in lc:
+                    # plotting along a coordinate axis
+                    if n in coords:
                         xdata = coords[n][lc].copy()
-                        dim = loc.index(":")
-                        loc.remove(":")
-                        if dim == 0:
-                            xlabel = "Vessel circumference $\\varphi$ [°]"
-                            xdata *= 180 / np.pi
-                            xdata = np.append(xdata, 360)
-                            ydata = np.append(ydata, [ydata[0]], axis=0)
-                            dphi = 45
-                            xticks = np.arange(0, 360 + dphi, dphi).astype(int)
-                        elif dim == 1:
-                            xlabel = "Vessel radius $r$ [mm]"
-                            xticks = [xdata[0], xdata[-1]]
-                        elif dim == 2:
-                            xlabel = "Vessel axial $z$ [mm]"
-                            xticks = [0, 2, 4, 6, 7.5, 9, 11, 13, 15]
-                        dim_names = ["cir", "rad", "axi"]
-                        fname += "_" + dim_names[dim]
                     else:
-                        # plotting a single point over all load steps
-                        nd = len(ydata)
-                        n10 = int(np.log(nd) / np.log(10))
-                        xdata = np.arange(0, nd)
-                        xlabel = "Load step [-]"
-                        if nd <= 10:
-                            xticks = np.arange(0, nd, 1)
-                        else:
-                            xticks = np.arange(0, nd, nd // 10**n10 * 10 ** (n10 - 1))
-                        fname += "_load"
+                        xdata = next(iter(coords.values()))[lc].copy()
+                    dim = loc.index(":")
+                    loc.remove(":")
+                    if dim == 0:
+                        xlabel = "Vessel circumference $\\varphi$ [°]"
+                        xdata *= 180 / np.pi
+                        xdata = np.append(xdata, 360)
+                        ydata = np.append(ydata, [ydata[0]], axis=0)
+                        dphi = 45
+                        xticks = np.arange(0, 360 + dphi, dphi).astype(int)
+                    elif dim == 1:
+                        xlabel = "Vessel radius $r$ [mm]"
+                        xticks = [xdata[0], xdata[-1]]
+                    elif dim == 2:
+                        xlabel = "Vessel axial $z$ [mm]"
+                        xticks = [0, 2, 4, 6, 7.5, 9, 11, 13, 15]
+                    dim_names = ["cir", "rad", "axi"]
+                    fname += "_" + dim_names[dim]
+                elif study == "single":
+                    # plotting a single point over all load steps
+                    nd = len(ydata)
+                    n10 = int(np.log(nd) / np.log(10))
+                    xdata = np.arange(0, nd)
+                    xlabel = "Load step [-]"
+                    if nd <= 10:
+                        xticks = np.arange(0, nd, 1)
+                    else:
+                        xticks = np.arange(0, nd, nd // 10**n10 * 10 ** (n10 - 1))
+                    fname += "_load"
                 else:
                     if study not in s_labels:
                         raise ValueError("unknown study: " + study)
@@ -471,9 +498,9 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     if quant == "phic":
                         # add reference collagen mass fraction
                         yref = 0.33
-                    if quant == "disp" and j_data == 1:
+                    if (quant == "disp" and j_data == 1) or quant == "disp_r":
                         yref = 0.0
-                    if yref is not None:
+                    if yref is not None and lc == locations[0]:
                         ax[pos].plot(xref, [yref] * 2, "k-", linewidth=2)
 
                 # assemble filename
@@ -482,6 +509,8 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     fname += "_".join([""] + loc)
                     stl = "-"
                     col = "k"
+                    if len(ydata.shape) == 2 and study == "KsKi":
+                        col = get_colormap(param[n]["KsKi"])
                 else:
                     # assume all locations provided are circumferential
                     fname += "_".join([""] + loc[1:])
@@ -498,7 +527,11 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
 
                 # plot!
                 try:
-                    ax[pos].plot(xdata, ydata, stl, color=col, linewidth=2)
+                    if isinstance(col, np.ndarray): 
+                        for yd, cl in zip(ydata.T, col):
+                            ax[pos].plot(xdata, yd, stl, color=cl, linewidth=2)
+                    else:
+                        ax[pos].plot(xdata, ydata, stl, color=col, linewidth=2)
                 except Exception as e:
                     print(e)
                     pdb.set_trace()
@@ -514,6 +547,19 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                 ax[pos].set_xlabel(xlabel)
             if nx == 1 or pos[-1] == 0:
                 ax[pos].set_ylabel(f_labels[quant][j_data])
+    
+    # share y-axes
+    if quant == "stim":
+        sharey = [1, 2]
+        ymin = []
+        ymax = []
+        for iy in sharey:
+            for a in ax[iy]:
+                ymin += [a.get_ylim()]
+                ymax += [a.get_ylim()]
+        for iy in sharey:
+            for a in ax[iy]:
+                a.set_ylim(np.min(ymin), np.max(ymax))
     plt.tight_layout()
     fname += time_str + ".png"
     fig.savefig(os.path.join(out, fname), bbox_inches="tight")
@@ -540,22 +586,15 @@ def main_param(folder, p_name, domain="solid"):
     assert len(study_params) * len(study_names) == len(data), "Inconsistent data"
 
     # collect data for all parameter variations
-    data_sorted = {}
+    data_sorted = rec_dict()
     param_sorted = {}
-    for s in study_names:
-        data_sorted[s] = {}
-        for loc in data[n].keys():
-            if ":" not in loc:
-                data_sorted[s][loc] = {}
-                for f in data[n][loc].keys():
-                    data_sorted[s][loc][f] = np.zeros((len(study_params), f_comp[f]))
-    for n in data.keys():
+    for n in sorted(data.keys()):
         i_s = n.split("_")[0]
-        i_p = study_params.index(param[n][p_name])
         for loc in data[n].keys():
-            if ":" not in loc:
-                for f in data[n][loc].keys():
-                    data_sorted[i_s][loc][f][i_p] = data[n][loc][f][-1]
+            for f in data[n][loc].keys():
+                if f not in data_sorted[i_s][loc]:
+                    data_sorted[i_s][loc][f] = []
+                data_sorted[i_s][loc][f] += [data[n][loc][f][-1]]
         param_sorted[i_s] = {p_name: np.array(study_params, dtype=float)}
 
     plot_res(data_sorted, coords, times, param_sorted, out, domain, "KsKi")
@@ -627,7 +666,7 @@ def main_convergence(folder):
         n_it = []
         for err in data[f]["error"]:
             n_it += [len(err)]
-        print(kski, "{:.1f}".format(np.mean(n_it[2:])))
+        print(kski, "{:.1f}".format(np.mean(n_it[2:])), np.sum(n_it))
         ydata += [np.cumsum(n_it)]
         param += [float(kski)]
 
@@ -637,10 +676,7 @@ def main_convergence(folder):
 
     fig, ax = plt.subplots(figsize=(12.5, 5), dpi=300)
 
-    # continuous color map
-    cstart = 0.3
-    cmap = (param + cstart) / (np.max(param) + cstart)
-    colors = plt.colormaps["Reds"](cmap)
+    colors = get_colormap(param)
     for y, c in zip(ydata.T, colors):
         ax.plot(xdata, y, color=c, linewidth=2)
     ax.grid(True)
