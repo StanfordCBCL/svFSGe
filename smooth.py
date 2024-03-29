@@ -2,7 +2,10 @@
 # coding=utf-8
 
 import pdb
+import os
 import numpy as np
+import vtk
+import glob
 
 from scipy.ndimage import gaussian_filter
 from scipy.interpolate import griddata
@@ -10,6 +13,7 @@ from scipy.interpolate import griddata
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 
+from vtk_functions import read_geo, write_geo
 
 def cart2rad(pts):
     # convert cartesian coordinates to cylindrical coordinates
@@ -84,6 +88,45 @@ def smooth_wss(pts, val, ns=1, smooth=2):
     return image_to_grid(img_smooth, coord, xi)
 
 
+def smoothAttributes(data, relaxationFactor=0.1, numIterations=100):
+    attributeSmoothingFilter = vtk.vtkAttributeSmoothingFilter()
+    attributeSmoothingFilter.SetInputData(data)
+    attributeSmoothingFilter.SetSmoothingStrategyToAllPoints()
+    attributeSmoothingFilter.SetNumberOfIterations(numIterations)
+    attributeSmoothingFilter.SetRelaxationFactor(relaxationFactor)
+    attributeSmoothingFilter.SetWeightsTypeToDistance()
+    attributeSmoothingFilter.AddExcludedArray("Pressure")
+    attributeSmoothingFilter.AddExcludedArray("Velocity")
+    attributeSmoothingFilter.AddExcludedArray("Displacement")
+    attributeSmoothingFilter.Update()
+    return attributeSmoothingFilter.GetOutput()
+
+def smooth_gr(inp, n_smooth=10):
+    c2p = inp
+    for _ in range(n_smooth):
+        # map point data to cell data
+        p2c = vtk.vtkPointDataToCellData()
+        p2c.SetInputData(c2p.GetOutput())
+        p2c.Update()
+
+        # map cell data to point data
+        c2p = vtk.vtkCellDataToPointData()
+        c2p.SetInputData(p2c.GetOutput())
+        c2p.Update()
+    return c2p.GetOutput()
+
+if __name__ == "__main__":
+    study = ""
+    folder_in = "gr"
+    folder_out = "gr_smooth"
+    for fname in glob.glob(os.path.join(study, folder_in, "gr_*.vtu")):
+        geo = read_geo(fname)
+        out = os.path.join(study, folder_out, os.path.basename(fname))
+        # write_geo(out, smoothAttributes(geo, 0.05, 100))
+        write_geo(out, smooth_gr(geo))
+    # pdb.set_trace()
+
+
 # from simulation import Simulation
 # from cylinder import generate_mesh
 # from fsg import rad
@@ -95,7 +138,6 @@ def smooth_wss(pts, val, ns=1, smooth=2):
 
 # # from https://github.com/StanfordCBCL/DataCuration
 # sys.path.append(os.path.join(usr, 'work/repos/DataCuration'))
-# from vtk_functions import read_geo, write_geo
 
 # # read data
 # geo = read_geo('wss_buckled.vtp').GetOutput()
