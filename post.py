@@ -6,7 +6,7 @@ import argparse
 import os
 import glob
 import json
-import json
+import scipy
 import xmltodict
 import numpy as np
 import matplotlib.pyplot as plt
@@ -40,27 +40,28 @@ f_labels = {
     "disp_r": ["Disp. $d_r$ [mm]"],
     "thick": ["Thickness [$\mu$m]"],
     "stim": [
-        "Gain ratio $K_{\\tau\sigma}$ [-]",
+        "Gain ratio $K_{\\tau\sigma,h}$ [-]",
         "Stim. $\Delta\sigma_I$ [-]",
         "Stim. $\Delta\\tau_w$ [-]",
     ],
     "jac": ["Jacobian [-]"],
     "pk2": [
-        "2PK $S_\{\\theta\\theta\}$ [kPa]",
-        "2PK $S_\{rr\}$ [kPa]",
-        "2PK $S_\{zz\}$ [kPa]",
+        "2PK $S_{\\theta\\theta}$ [kPa]",
+        "2PK $S_{rr}$ [kPa]",
+        "2PK $S_{zz}$ [kPa]",
     ],
     "lagrange": ["Lagrange $p$ [kPa]"],
     "phic": ["Collagen $\phi^c_h$ [-]"],
+    "phic_curr": ["Collagen $\phi^c_h J_h$ [-]"],
     "pressure": ["Pressure [mmHg]"],
     "velocity": ["Velocity $u$ [mm/s]"],
 }
-s_labels = {"KsKi": "Gain ratio $K_{\\tau\sigma}$ [-]"}
+s_labels = {"KsKi": "Gain ratio $K_{\\tau\sigma,o}$ [-]"}
 f_comp = {key: len(value) for key, value in f_labels.items()}
 f_scales = {"disp": np.array([180.0 / np.pi, 1.0, 1.0]), "thick": [1e3], "pressure": [1.0/0.1333]}
 titles = {"gr": "G\&R", "partitioned": "FSGe"}
 fields = {"fluid": ["pressure", "velocity"],
-    "solid": ["disp_r", "disp", "thick", "stim", "jac", "pk2", "lagrange", "phic"]}
+    "solid": ["disp_r", "disp", "thick", "stim", "jac", "pk2", "lagrange", "phic", "phic_curr"]}
 
 
 def get_colormap(param):
@@ -282,6 +283,7 @@ def extract_results_solid(post, res, pts, ids):
         post[loc]["pk2"] += [pk2_cra[pt].T]
         post[loc]["lagrange"] += [gr[pt, 30]]
         post[loc]["phic"] += [gr[pt, 37]]
+        post[loc]["phic_curr"] += [gr[pt, 37] * jac[pt]]
 
         # extract stimuli
         post[loc]["stim"] += [stim[pt].T]
@@ -413,12 +415,14 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
         for j_data in range(f_comp[quant]):
             title = titles[n.split("_")[0]]
             if study == "single":
-                title += ", $K_{\\tau\sigma} = " + param[n]["KsKi"] + "$"
+                title += ", $K_{\\tau\sigma,o} = " + param[n]["KsKi"] + "$"
 
             if ny == 1 and nx == 1:
                 pos = i_data
-            elif ny == 1 or nx == 1:
+            elif ny == 1:
                 pos = (i_data,)
+            elif nx == 1:
+                pos = (j_data,)
             else:
                 pos = np.unravel_index(i_data * f_comp[quant] + j_data, (ny, nx), "F")
 
@@ -481,7 +485,7 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     nd = len(ydata)
                     n10 = int(np.log(nd) / np.log(10))
                     xdata = np.arange(0, nd)
-                    xlabel = "Load step [-]"
+                    xlabel = "Load step $t$ [-]"
                     if nd <= 10:
                         xticks = np.arange(0, nd, 1)
                     else:
@@ -495,7 +499,7 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                     xticks = xdata
                     xref = [xdata[0], xdata[-1]]
                     yref = None
-                    if quant == "phic":
+                    if "phic" in quant:
                         # add reference collagen mass fraction
                         yref = 0.33
                     if (quant == "disp" and j_data == 1) or quant == "disp_r":
@@ -554,12 +558,19 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
         ymin = []
         ymax = []
         for iy in sharey:
-            for a in ax[iy]:
-                ymin += [a.get_ylim()]
-                ymax += [a.get_ylim()]
+            if isinstance(ax[iy], list):
+                for a in ax[iy]:
+                    ymin += [a.get_ylim()]
+                    ymax += [a.get_ylim()]
+            else:
+                ymin += [ax[iy].get_ylim()]
+                ymax += [ax[iy].get_ylim()]
         for iy in sharey:
-            for a in ax[iy]:
-                a.set_ylim(np.min(ymin), np.max(ymax))
+            if isinstance(ax[iy], list):
+                for a in ax[iy]:
+                    a.set_ylim(np.min(ymin), np.max(ymax))
+            else:
+                ax[iy].set_ylim(np.min(ymin), np.max(ymax))
     plt.tight_layout()
     fname += time_str + ".png"
     fig.savefig(os.path.join(out, fname), bbox_inches="tight")
@@ -662,7 +673,7 @@ def main_convergence(folder):
     param = []
     for f in inp.keys():
         kski = data[f]["KsKi"]
-        labels += ["$K_{\\tau\sigma}$ = " + kski]
+        labels += ["$K_{\\tau\sigma,o}$ = " + kski]
         n_it = []
         for err in data[f]["error"]:
             n_it += [len(err)]
@@ -683,7 +694,7 @@ def main_convergence(folder):
     ax.set_xticks(xdata)
     ax.set_xlim([np.min(xdata), np.max(xdata)])
     ax.set_ylim([0, np.max(ydata)])
-    ax.set_xlabel("Load step [-]")
+    ax.set_xlabel("Load step $t$ [-]")
     ax.set_ylabel("Coupling iterations [-]")
 
     ax2 = ax.twinx()
