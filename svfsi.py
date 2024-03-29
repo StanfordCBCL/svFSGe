@@ -19,8 +19,7 @@ from os.path import join
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 from vtk.util.numpy_support import numpy_to_vtk as n2v
 
-from simulation import Simulation
-from cylinder import Mesh, generate_mesh
+from cylinder import Mesh, Simulation, generate_mesh
 from vtk_functions import read_geo, write_geo
 
 # names of fields in SimVascular

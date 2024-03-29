@@ -19,7 +19,6 @@
   - `in_svfsi_plus` svFSIplus input files
   - `in_petsc` PETSc linear solver settings
 - `post.py` generate line plots from FSGe results
-- `simulation.py` base class for simulations
 - `svfsi.py` sets up, executes, and processes svFSIplus simulations
 - `utilities.py` IQN-ILS filtering
 - `vtk_functions.py` useful VTK functions for file IO
