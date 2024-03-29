@@ -53,8 +53,7 @@ class FSG(svFSI):
         self.plot_convergence()
 
         # post process
-        out_path = os.path.join(self.p["f_out"], "partitioned", "converged")
-        main_arg([out_path])
+        main_arg([self.p["f_out"]])
 
     def main(self):
         # print reynolds number
