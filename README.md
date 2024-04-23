@@ -1,7 +1,7 @@
 # FSGe: A fast and strongly-coupled 3D fluid-solid-growth interaction method
 
 ## Reference
-(insert link to arXiv once submitted)
+[arXiv:2404.14187](https://arxiv.org/abs/2404.14187)
 
 ## Quickstart
 
