@@ -558,7 +558,7 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
         ymin = []
         ymax = []
         for iy in sharey:
-            if isinstance(ax[iy], list):
+            if isinstance(ax[iy], (np.ndarray, list)):
                 for a in ax[iy]:
                     ymin += [a.get_ylim()]
                     ymax += [a.get_ylim()]
@@ -566,13 +566,13 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
                 ymin += [ax[iy].get_ylim()]
                 ymax += [ax[iy].get_ylim()]
         for iy in sharey:
-            if isinstance(ax[iy], list):
+            if isinstance(ax[iy], (np.ndarray, list)):
                 for a in ax[iy]:
                     a.set_ylim(np.min(ymin), np.max(ymax))
             else:
                 ax[iy].set_ylim(np.min(ymin), np.max(ymax))
     plt.tight_layout()
-    fname += time_str + ".png"
+    fname += time_str + ".pdf"
     fig.savefig(os.path.join(out, fname), bbox_inches="tight")
     plt.cla()
     print(fname)
@@ -703,7 +703,7 @@ def main_convergence(folder):
     ax2.set_yticklabels(labels)
 
     plt.tight_layout()
-    fig.savefig(os.path.join(out, "convergence.png"), bbox_inches="tight")
+    fig.savefig(os.path.join(out, "convergence.pdf"), bbox_inches="tight")
     plt.cla()
 
 
