@@ -235,34 +235,100 @@ def run_forward(par, pressure_mmhg=104.9):
     return result
 
 
-def run_inverse(par, target_radius=0.6468):
-    """Find pressure that yields target inner radius."""
+def poiseuille_resistance(mu_blood, length, radius):
+    """Poiseuille flow resistance: R = 8 * mu * L / (pi * r^4).
+
+    Args:
+        mu_blood: dynamic viscosity [kPa·s]
+        length: vessel length [mm]
+        radius: inner radius [mm]
+
+    Returns:
+        Resistance [kPa·s/mm^3]
+    """
+    return 8.0 * mu_blood * length / (np.pi * radius**4)
+
+
+def run_inverse_pressure(par, pressure_mmhg):
+    """Find equilibrium geometry for a given pressure.
+
+    Args:
+        par: material/geometric parameters
+        pressure_mmhg: prescribed pressure [mmHg]
+    """
+    P = pressure_mmhg * MMHG_TO_KPA
     lz = 1.0
 
-    def objective(P):
-        result = solve_geometry(P, lz, par)
-        return target_radius - result['a']
-
-    P0 = 104.9 * MMHG_TO_KPA
-    P_sol, info, flag, msg = scipy.optimize.fsolve(
-        objective, P0, full_output=True
-    )
-    P_sol = float(P_sol)
-
-    if flag != 1:
-        raise RuntimeError(f"fsolve failed: {msg}")
-
-    result = solve_geometry(P_sol, lz, par)
-    fz = axial_force(P_sol, result['a'], result['h'], result['sigma_zz'])
+    result = solve_geometry(P, lz, par)
+    fz = axial_force(P, result['a'], result['h'], result['sigma_zz'])
     result['F_z'] = fz
 
-    print(f"=== Inverse: pressure for a = {target_radius} mm ===")
+    print(f"=== Inverse: geometry at P = {pressure_mmhg:.2f} mmHg ===")
     for k, v in result.items():
         print(f"  {k:12s} = {v:.6f}")
     return result
 
 
-def run_plot(par):
+def run_inverse_flow(par, delta_Q, mu_blood_Pa_s=0.004):
+    """Find geometry in mechanobiological equilibrium with pulse pressure.
+
+    Given delta_Q (systolic - diastolic flow rate), finds the vessel
+    geometry where:
+      1. Poiseuille resistance R = 8 * mu * L / (pi * a^4)
+      2. Pulse pressure delta_P = R * delta_Q
+      3. Thin-wall equilibrium: sigma_tt * h / a = delta_P
+
+    Args:
+        par: material/geometric parameters
+        delta_Q: flow rate difference (systolic - diastolic) [mm^3/s]
+        mu_blood_Pa_s: blood dynamic viscosity [Pa·s] (default: 0.004)
+    """
+    lz = 1.0
+    mu_blood = mu_blood_Pa_s * 1e-3  # convert Pa·s to kPa·s
+
+    def objective(ro):
+        ri, h, lt, lr = _geometry_from_ro(ro, lz, par)
+        # Poiseuille resistance
+        R = poiseuille_resistance(mu_blood, par.l_o, ri)
+        # Pulse pressure from flow
+        delta_P = R * delta_Q
+        # Equilibrium pressure from wall stress
+        s = cauchy_stress(lt, lz, par)
+        sigma_tt = s['tt'] - s['rr']
+        P_wall = sigma_tt * h / ri
+        return delta_P - P_wall
+
+    ro_ref = par.a_o + par.h_o
+    ro_sol, info, flag, msg = scipy.optimize.fsolve(
+        objective, ro_ref, full_output=True
+    )
+    ro_sol = float(ro_sol)
+
+    if flag != 1:
+        raise RuntimeError(f"fsolve failed: {msg}")
+
+    ri, h, lt, lr = _geometry_from_ro(ro_sol, lz, par)
+    R = poiseuille_resistance(mu_blood, par.l_o, ri)
+    delta_P = R * delta_Q
+    result = solve_geometry(delta_P, lz, par)
+    fz = axial_force(delta_P, result['a'], result['h'], result['sigma_zz'])
+    result['F_z'] = fz
+    result['delta_Q'] = delta_Q
+    result['R'] = R
+    result['mu_blood'] = mu_blood_Pa_s
+
+    print("=== Inverse: geometry from flow rate difference ===")
+    print(f"  {'delta_Q':12s} = {delta_Q:.6f} mm^3/s")
+    print(f"  {'mu_blood':12s} = {mu_blood_Pa_s:.6f} Pa·s")
+    print(f"  {'R':12s} = {R:.6e} kPa·s/mm^3")
+    print(f"  {'delta_P':12s} = {delta_P:.6f} kPa ({delta_P / MMHG_TO_KPA:.2f} mmHg)")
+    for k, v in result.items():
+        if k not in ('delta_Q', 'R', 'mu_blood'):
+            print(f"  {k:12s} = {v:.6f}")
+    return result
+
+
+def run_plot_pressure(par):
     """Sweep pressure and plot inner radius vs pressure."""
     lz = 1.0
     pressures_mmhg = np.linspace(0.1, 200, 200)
@@ -283,8 +349,61 @@ def run_plot(par):
     ax.set_title('Thin-wall constrained mixture model')
     ax.grid(True)
     plt.tight_layout()
-    plt.savefig('initial.pdf')
-    print("Saved plot to initial.pdf")
+    plt.savefig('initial_pressure.pdf')
+    print("Saved plot to initial_pressure.pdf")
+
+
+def run_plot_flow(par, mu_blood_Pa_s=0.004):
+    """Sweep delta_Q and plot equilibrium inner radius vs flow rate difference."""
+    lz = 1.0
+    mu_blood = mu_blood_Pa_s * 1e-3  # convert Pa·s to kPa·s
+    delta_Qs = np.linspace(1, 5000, 200)
+    radii = []
+    pressures = []
+
+    for dQ in delta_Qs:
+        def objective(ro):
+            ri, h, lt, lr = _geometry_from_ro(ro, lz, par)
+            R = poiseuille_resistance(mu_blood, par.l_o, ri)
+            delta_P = R * dQ
+            s = cauchy_stress(lt, lz, par)
+            sigma_tt = s['tt'] - s['rr']
+            P_wall = sigma_tt * h / ri
+            return delta_P - P_wall
+
+        ro_ref = par.a_o + par.h_o
+        try:
+            ro_sol, info, flag, msg = scipy.optimize.fsolve(
+                objective, ro_ref, full_output=True
+            )
+            if flag != 1:
+                raise RuntimeError
+            ro_sol = float(ro_sol)
+            ri, h, lt, lr = _geometry_from_ro(ro_sol, lz, par)
+            R = poiseuille_resistance(mu_blood, par.l_o, ri)
+            radii.append(ri)
+            pressures.append(R * dQ / MMHG_TO_KPA)
+        except RuntimeError:
+            radii.append(np.nan)
+            pressures.append(np.nan)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6), dpi=150)
+
+    ax1.plot(delta_Qs, radii, 'b-', linewidth=2)
+    ax1.set_xlabel(r'$\Delta Q$ [mm$^3$/s]')
+    ax1.set_ylabel('Inner radius [mm]')
+    ax1.set_title('Equilibrium radius vs flow rate difference')
+    ax1.grid(True)
+
+    ax2.plot(delta_Qs, pressures, 'r-', linewidth=2)
+    ax2.set_xlabel(r'$\Delta Q$ [mm$^3$/s]')
+    ax2.set_ylabel('Pulse pressure [mmHg]')
+    ax2.set_title('Pulse pressure vs flow rate difference')
+    ax2.grid(True)
+
+    plt.tight_layout()
+    plt.savefig('initial_flow.pdf')
+    print("Saved plot to initial_flow.pdf")
 
 
 def main():
@@ -294,9 +413,11 @@ def main():
     parser.add_argument('--mode', choices=['forward', 'inverse', 'plot'],
                         default='forward')
     parser.add_argument('--pressure', type=float, default=104.9,
-                        help='Homeostatic pressure [mmHg] (forward/plot mode)')
-    parser.add_argument('--target-radius', type=float, default=0.647,
-                        help='Target inner radius [mm] (inverse mode)')
+                        help='Pressure [mmHg] (forward/plot mode, or inverse with --pressure)')
+    parser.add_argument('--delta-Q', type=float, default=None,
+                        help='Systolic - diastolic flow rate [mm^3/s] (inverse mode)')
+    parser.add_argument('--mu-blood', type=float, default=0.004,
+                        help='Blood dynamic viscosity [Pa·s] (inverse with --delta-Q, default: 0.004)')
     parser.add_argument('--h_o', type=float, default=0.040,
                         help='Reference wall thickness [mm] (default: Table 1 value)')
     args = parser.parse_args()
@@ -306,9 +427,15 @@ def main():
     if args.mode == 'forward':
         run_forward(par, pressure_mmhg=args.pressure)
     elif args.mode == 'inverse':
-        run_inverse(par, target_radius=args.target_radius)
+        if args.delta_Q is not None:
+            run_inverse_flow(par, delta_Q=args.delta_Q, mu_blood_Pa_s=args.mu_blood)
+        else:
+            run_inverse_pressure(par, pressure_mmhg=args.pressure)
     elif args.mode == 'plot':
-        run_plot(par)
+        if args.delta_Q is not None:
+            run_plot_flow(par, mu_blood_Pa_s=args.mu_blood)
+        else:
+            run_plot_pressure(par)
 
 
 if __name__ == '__main__':
