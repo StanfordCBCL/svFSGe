@@ -6,4 +6,6 @@
 *.swp
 __pycache__
 *.vt*
-*.txt
+!test_reference/**/*.vtu
+partitioned_*/
+test_output/

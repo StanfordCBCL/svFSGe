@@ -1,0 +1,185 @@
+name: FSGe CI Test
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - '**'
+
+jobs:
+  test-fsg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create directories for volumes
+        run: |
+          mkdir -p svMultiPhysics
+          mkdir -p test_output
+
+      - name: Pull Docker image
+        run: |
+          docker pull simvascular/solver:latest
+
+      - name: Run FSGe test in Docker container
+        id: docker_test
+        continue-on-error: true
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/svMultiPhysics:/svfsi \
+            -v ${{ github.workspace }}:/svFSGe \
+            simvascular/solver:latest \
+            /bin/bash -c '
+              set -e
+
+              echo "================================"
+              echo "Cloning svMultiPhysics..."
+              echo "================================"
+
+              # Fix Git ownership issues in Docker
+              git config --global --add safe.directory /svfsi
+              git config --global --add safe.directory /svFSGe
+
+              cd /svfsi
+              git init
+              git remote add origin https://github.com/Eleven7825/svMultiPhysics.git
+              git fetch --depth=1 origin FSGe
+              git checkout -b FSGe origin/FSGe
+
+              echo ""
+              echo "================================"
+              echo "Building svFSIplus..."
+              echo "================================"
+              bash makeCommand.sh 2>&1 | tee /svFSGe/test_output/build.log
+
+              echo ""
+              echo "================================"
+              echo "Installing Python dependencies..."
+              echo "================================"
+              pip install -r /svFSGe/requirements.txt 2>&1 | tee /svFSGe/test_output/pip_install.log
+
+              echo ""
+              echo "================================"
+              echo "Running FSGe test (nmax=2)..."
+              echo "================================"
+              cd /svFSGe
+              python3 ./fsg.py in_sim/partitioned_test.json 2>&1 | tee /svFSGe/test_output/test_run.log
+
+              echo ""
+              echo "================================"
+              echo "Copying results..."
+              echo "================================"
+              # Find the most recent partitioned directory
+              RESULT_DIR=$(ls -dt partitioned_* 2>/dev/null | head -1)
+              if [ -z "$RESULT_DIR" ]; then
+                echo "ERROR: No partitioned results directory found!"
+                exit 1
+              fi
+
+              echo "Found results in: $RESULT_DIR"
+              cp -r "$RESULT_DIR" /svFSGe/test_output/
+
+              echo ""
+              echo "Test execution completed successfully!"
+            '
+
+      - name: Check test execution status
+        if: always()
+        run: |
+          if [ "${{ steps.docker_test.outcome }}" != "success" ]; then
+            echo "❌ Docker test step failed!"
+            echo ""
+            echo "Checking for error logs..."
+            if [ -f test_output/build.log ]; then
+              echo "=== Build log (last 50 lines) ==="
+              tail -50 test_output/build.log
+            fi
+            if [ -f test_output/test_run.log ]; then
+              echo "=== Test run log (last 50 lines) ==="
+              tail -50 test_output/test_run.log
+            fi
+            exit 1
+          else
+            echo "✅ Docker test step completed successfully"
+          fi
+
+      - name: List test output
+        if: always()
+        run: |
+          echo "Test output directory contents:"
+          ls -la test_output/ || echo "test_output directory is empty or missing"
+          if ls test_output/partitioned_* 1> /dev/null 2>&1; then
+            echo ""
+            echo "Partitioned directory contents:"
+            ls -la test_output/partitioned_*/
+          else
+            echo "No partitioned results found in test_output/"
+          fi
+
+      - name: Install comparison dependencies
+        if: success()
+        run: pip install numpy meshio
+
+      - name: Compare results with reference
+        if: success()
+        run: |
+          echo "================================"
+          echo "Comparing test results with reference baseline..."
+          echo "================================"
+
+          # Find the partitioned directory in test_output
+          RESULT_DIR=$(ls -dt test_output/partitioned_* 2>/dev/null | head -1)
+
+          if [ -z "$RESULT_DIR" ]; then
+            echo "ERROR: No test results found in test_output/"
+            echo "The simulation may have failed. Check the test execution logs above."
+            exit 1
+          fi
+
+          echo "Test results: $RESULT_DIR/partitioned.json"
+          echo "Reference: test_reference/nmax_2/reference_results.json"
+          echo ""
+
+          python3 scripts/compare_results.py \
+            test_reference/nmax_2/reference_results.json \
+            "$RESULT_DIR/partitioned.json" \
+            --ref-vtu test_reference/nmax_2/tube_002.vtu \
+            --test-vtu "$RESULT_DIR/partitioned/converged/tube_002.vtu"
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fsg-test-results
+          path: |
+            test_output/
+            !test_output/**/partitioned/fluid_*.vtu
+            !test_output/**/partitioned/solid_*.vtu
+            !test_output/**/partitioned/mesh_*.vtu
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload convergence plot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: convergence-plot
+          path: test_output/**/convergence.png
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "================================"
+          echo "Test Summary"
+          echo "================================"
+          echo "Status: ${{ job.status }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run number: ${{ github.run_number }}"
+          echo "================================"

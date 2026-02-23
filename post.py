@@ -19,13 +19,13 @@ from vtk.util.numpy_support import vtk_to_numpy as v2n
 from svfsi import svFSI
 from vtk_functions import read_geo, threshold
 
-# use LaTeX in text
+# use LaTeX in text (disabled to avoid LaTeX dependency)
 plt.rcParams.update(
     {
-        "text.usetex": True,
-        "font.family": "serif",
-        "font.serif": "Computer Modern Roman",
-        "font.size": 21,
+        "text.usetex": False,
+        #"font.family": "serif",
+        #"font.serif": "Computer Modern Roman",
+        #"font.size": 21,
     }
 )
 # plt.style.use("fivethirtyeight")
@@ -33,33 +33,33 @@ plt.rcParams.update(
 # field descriptions
 f_labels = {
     "disp": [
-        "Disp. $d_\\theta$ [°]",
+        r"Disp. $d_\theta$ [°]",
         "Disp. $d_r$ [mm]",
         "Disp. $d_z$ [mm]",
     ],
     "disp_r": ["Disp. $d_r$ [mm]"],
-    "thick": ["Thickness [$\mu$m]"],
+    "thick": [r"Thickness [$\mu$m]"],
     "stim": [
-        "Gain ratio $K_{\\tau\sigma,h}$ [-]",
-        "Stim. $\Delta\sigma_I$ [-]",
-        "Stim. $\Delta\\tau_w$ [-]",
+        r"Gain ratio $K_{\tau\sigma,h}$ [-]",
+        r"Stim. $\Delta\sigma_I$ [-]",
+        r"Stim. $\Delta\tau_w$ [-]",
     ],
     "jac": ["Jacobian [-]"],
     "pk2": [
-        "2PK $S_{\\theta\\theta}$ [kPa]",
+        r"2PK $S_{\theta\theta}$ [kPa]",
         "2PK $S_{rr}$ [kPa]",
         "2PK $S_{zz}$ [kPa]",
     ],
     "lagrange": ["Lagrange $p$ [kPa]"],
-    "phic": ["Collagen $\phi^c_h$ [-]"],
-    "phic_curr": ["Collagen $\phi^c_h J_h$ [-]"],
+    "phic": [r"Collagen $\phi^c_h$ [-]"],
+    "phic_curr": [r"Collagen $\phi^c_h J_h$ [-]"],
     "pressure": ["Pressure [mmHg]"],
     "velocity": ["Velocity $u$ [mm/s]"],
 }
-s_labels = {"KsKi": "Gain ratio $K_{\\tau\sigma,o}$ [-]"}
+s_labels = {r"KsKi": r"Gain ratio $K_{\tau\sigma,o}$ [-]"}
 f_comp = {key: len(value) for key, value in f_labels.items()}
 f_scales = {"disp": np.array([180.0 / np.pi, 1.0, 1.0]), "thick": [1e3], "pressure": [1.0/0.1333]}
-titles = {"gr": "G\&R", "partitioned": "FSGe"}
+titles = {"gr": r"G\&R", "partitioned": "FSGe"}
 fields = {"fluid": ["pressure", "velocity"],
     "solid": ["disp_r", "disp", "thick", "stim", "jac", "pk2", "lagrange", "phic", "phic_curr"]}
 
@@ -415,7 +415,7 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
         for j_data in range(f_comp[quant]):
             title = titles[n.split("_")[0]]
             if study == "single":
-                title += ", $K_{\\tau\sigma,o} = " + param[n]["KsKi"] + "$"
+                title += r", $K_{\tau\sigma,o} = " + param[n]["KsKi"] + "$"
 
             if ny == 1 and nx == 1:
                 pos = i_data
@@ -673,7 +673,7 @@ def main_convergence(folder):
     param = []
     for f in inp.keys():
         kski = data[f]["KsKi"]
-        labels += ["$K_{\\tau\sigma,o}$ = " + kski]
+        labels += [r"$K_{\tau\sigma,o}$ = " + kski]
         n_it = []
         for err in data[f]["error"]:
             n_it += [len(err)]
