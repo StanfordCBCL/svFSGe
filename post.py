@@ -9,6 +9,8 @@ import json
 import scipy
 import xmltodict
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # headless
 import matplotlib.pyplot as plt
 
 from matplotlib.ticker import StrMethodFormatter
@@ -81,7 +83,7 @@ def read_xml_file(file_path):
 
 
 def read_json_file(file_path):
-    if not file_path:
+    if not file_path or not os.path.exists(file_path):
         return {}
     with open(file_path, "r") as file:
         return json.load(file)
@@ -337,7 +339,7 @@ def post_process(f_out, domain="solid"):
     return get_results(res, pts, ids, domain), coords, len(res)
 
 
-def plot_res(data, coords, times, param, out, domain, study):
+def plot_res(data, coords, times, param, out, domain, study, load_step=None):
     if domain == "solid":
         # cir locations: times on the clock
         loc_cir = range(0, 12, 3)
@@ -358,8 +360,10 @@ def plot_res(data, coords, times, param, out, domain, study):
 
     # loop time steps
     t_max = min(times.values())
+    if load_step is None:
+        load_step = [-1]
     # for t in reversed(range(t_max)):
-    for t in [-1]:
+    for t in load_step:
         # loop fields and plot
         for f in sorted(fields[domain]):
             # plot single points
@@ -413,7 +417,7 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
         ax = [ax]
     for i_data, (n, res) in enumerate(data.items()):
         for j_data in range(f_comp[quant]):
-            title = titles[n.split("_")[0]]
+            title = next((v for k, v in titles.items() if k in n), n)
             if study == "single":
                 title += r", $K_{\tau\sigma,o} = " + param[n]["KsKi"] + "$"
 
@@ -574,11 +578,11 @@ def plot_single(data, coords, param, out, study, quant, locations, time=-1):
     plt.tight_layout()
     fname += time_str + ".pdf"
     fig.savefig(os.path.join(out, fname), bbox_inches="tight")
-    plt.cla()
+    plt.close(fig)
     print(fname)
 
 
-def main_param(folder, p_name, domain="solid"):
+def main_param(folder, p_name, domain="solid", load_step=-1):
     # collect simulations
     out, inp, param = collect_simulations(folder)
 
@@ -608,7 +612,7 @@ def main_param(folder, p_name, domain="solid"):
                 data_sorted[i_s][loc][f] += [data[n][loc][f][-1]]
         param_sorted[i_s] = {p_name: np.array(study_params, dtype=float)}
 
-    plot_res(data_sorted, coords, times, param_sorted, out, domain, "KsKi")
+    plot_res(data_sorted, coords, times, param_sorted, out, domain, "KsKi", load_step=[load_step])
 
 
 def collect_simulations(folder):
@@ -629,7 +633,7 @@ def collect_simulations(folder):
             dir_name = f
             f_p_json = ""
             f_p_xml = os.path.join(f, "gr_full.xml")
-        elif "partitioned" in f:
+        elif "partitioned" in f or os.path.isdir(os.path.join(f, "partitioned")):
             dir_name = os.path.join(f, "partitioned", "converged")
             f_p_json = os.path.join(f, "partitioned.json")
             f_p_xml = os.path.join(f, "in_svfsi", "gr_full_restart.xml")
@@ -650,7 +654,252 @@ def collect_simulations(folder):
     return out, inp, param
 
 
-def main_arg(folder, domain="solid"):
+def plot_cc(f_out, out):
+    # load debug QR data
+    f_npy = os.path.join(f_out, "debug_qr.npy")
+    if not os.path.exists(f_npy):
+        return
+    d = np.load(f_npy, allow_pickle=True).item()
+    cc_list = d["cc"]
+    ncols_after = d["ncols_after"]
+    n_iter = len(cc_list)
+    q_max = max(ncols_after)
+
+    # t and n per IQN call
+    has_tn = "t" in d and len(d["t"]) == n_iter
+    t_arr = np.array(d["t"]) if has_tn else None
+    n_arr = np.array(d["n"]) if has_tn else None
+
+    # load-step transition boundaries (first call index of each new t)
+    transitions = []
+    if has_tn:
+        for idx in range(1, n_iter):
+            if t_arr[idx] != t_arr[idx - 1]:
+                transitions.append(idx)
+
+    # match residuals to IQN calls: use residual of the *next* sub-iter after
+    # each IQN call to show the effect of the update (the call's own n is before update)
+    residuals_before = None
+    residuals_after = None
+    f_json = os.path.join(f_out, "partitioned.json")
+    if has_tn and os.path.exists(f_json):
+        with open(f_json) as fh:
+            p = json.load(fh)
+        err = p.get("error", {})
+        if err:
+            first_key = next(iter(err))
+            err_steps = err[first_key]
+            res_b, res_a = [], []
+            for i in range(n_iter):
+                t, n = t_arr[i], n_arr[i]
+                if t < len(err_steps) and n < len(err_steps[t]):
+                    res_b.append(err_steps[t][n])
+                    # next sub-iter residual (after IQN update was applied)
+                    if n + 1 < len(err_steps[t]):
+                        res_a.append(err_steps[t][n + 1])
+                    else:
+                        res_a.append(np.nan)
+            if len(res_b) == n_iter:
+                residuals_before = np.array(res_b)
+                residuals_after = np.array(res_a)
+
+    # build heatmap matrix, y from 1..q_max
+    mat = np.full((n_iter, q_max), np.nan)
+    for i, cc in enumerate(cc_list):
+        mat[i, :len(cc)] = cc
+
+    n_plots = 3 if residuals_before is not None else 2
+    from matplotlib.gridspec import GridSpec
+    # two columns: wide data column + narrow colorbar column (same for all rows)
+    cbar_width = 0.03
+    fig = plt.figure(figsize=(12, 3.5 * n_plots), dpi=150)
+    gs = GridSpec(n_plots, 2, figure=fig,
+                  width_ratios=[1 - cbar_width, cbar_width],
+                  hspace=0.35, wspace=0.02)
+    axes = [fig.add_subplot(gs[i, 0]) for i in range(n_plots)]
+    # add invisible placeholder subplots in colorbar column for all rows
+    # so all data axes in column 0 have identical width
+    for i in range(n_plots):
+        ax_dummy = fig.add_subplot(gs[i, 1])
+        ax_dummy.set_visible(False)
+    # share x across all data axes
+    for ax in axes[1:]:
+        ax.sharex(axes[0])
+
+    x = np.arange(n_iter)
+    xlim = (-0.5, n_iter - 0.5)
+
+    def add_vlines(ax, color="k", with_label=False):
+        for xv in transitions:
+            t_from = t_arr[xv - 1]
+            t_to = t_arr[xv]
+            lbl = f"t={t_from}$\\to${t_to}" if with_label else None
+            ax.axvline(xv - 0.5, color=color, linestyle="--", linewidth=1,
+                       label=lbl)
+
+    # --- subplot 0: heatmap |cc|, log scale, integer y-ticks 1..q_max ---
+    ax = axes[0]
+    valid = mat[~np.isnan(mat)]
+    vmax = np.percentile(np.abs(valid), 95)
+    vmin = -vmax
+    im = ax.pcolormesh(np.arange(n_iter + 1) - 0.5,
+                       np.arange(q_max + 1) - 0.5,
+                       mat.T,
+                       cmap="RdBu_r", vmin=vmin, vmax=vmax,
+                       shading="flat")
+    ax.step(x, np.array(ncols_after) - 0.5, where="mid", color="k", linewidth=1.5)
+    add_vlines(ax)
+    ax.set_ylabel("Coefficient index")
+    ytick_step = max(1, q_max // 10)
+    yticks = np.arange(ytick_step - 1, q_max, ytick_step)
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(yticks + 1)
+    ax.set_ylim(-0.5, q_max - 0.5)
+    ax.set_xlim(xlim)
+    ax.set_title(r"$c$ (95th percentile color scale)")
+    # colorbar: use the row-0 placeholder (make it visible again)
+    cax = fig.axes[n_plots]  # first dummy axes = row 0 col 1
+    cax.set_visible(True)
+    fig.colorbar(im, cax=cax)
+
+    # --- subplot 1: norm of cc, log scale ---
+    ax = axes[1]
+    norms = [np.linalg.norm(cc) for cc in cc_list]
+    ax.plot(x, norms, "ko-", markersize=3, linewidth=1)
+    add_vlines(ax, with_label=True)
+    ax.set_ylabel(r"$\|c\|$")
+    ax.set_yscale("log")
+    ax.set_xlim(xlim)
+    ax.grid(True, which="both", alpha=0.4)
+    ax.set_title(r"Norm of IQN-ILS coefficients $c$")
+
+    # --- subplot 2: residual before and after each IQN update ---
+    if n_plots == 3:
+        ax = axes[2]
+        ax.plot(x, residuals_before, "bo-", markersize=3, linewidth=1, label="before update")
+        ax.plot(x, residuals_after,  "rs-", markersize=3, linewidth=1, label="after update")
+        ax.axhline(p["coup"]["tol"], color="k", linestyle="--", linewidth=1, label="tol")
+        add_vlines(ax, with_label=False)
+        ax.set_ylabel("Residual")
+        ax.set_yscale("log")
+        ax.set_xlim(xlim)
+        ax.grid(True, which="both", alpha=0.4)
+        ax.set_title("Coupling residual before/after IQN-ILS update")
+        ax.set_xlabel("IQN-ILS call index")
+        ax.legend(fontsize=7)
+    else:
+        axes[-1].set_xlabel("IQN-ILS call index")
+
+    from matplotlib.ticker import MaxNLocator
+    for ax in axes:
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    plt.tight_layout()
+    fname = os.path.join(out, "cc_coefficients.pdf")
+    fig.savefig(fname, bbox_inches="tight")
+    plt.close(fig)
+    print("cc_coefficients.pdf")
+
+
+def plot_arc(f_run, out):
+    # load arc-length trajectory (saved by fsg._run_arclength), cf. debug_qr.npy
+    f_npy = os.path.join(f_run, "arc_data.npy")
+    if not os.path.exists(f_npy):
+        return
+    d = np.load(f_npy, allow_pickle=True).item()
+    lam = np.array(d["lam"]); dd = np.array(d["dd"]); res = np.array(d["res"])
+    t_arr = np.array(d["t"])
+    ds = np.array(d["ds"]) if "ds" in d and len(d["ds"]) == len(lam) else None
+    tol = d.get("tol", 1e-4)
+    acc_t = np.array(d["accept_t"]); acc_lam = np.array(d["accept_lam"])
+    n_iter = len(lam)
+    if n_iter == 0:
+        return
+
+    x = np.arange(n_iter)
+    xlim = (-0.5, n_iter - 0.5)
+
+    # load-step transition boundaries (first sub-iter index of each new t)
+    transitions = [i for i in range(1, n_iter) if t_arr[i] != t_arr[i - 1]]
+
+    def add_vlines(ax, with_label=False):
+        for xv in transitions:
+            lbl = f"t={t_arr[xv-1]}$\\to${t_arr[xv]}" if with_label else None
+            ax.axvline(xv - 0.5, color="k", linestyle="--", linewidth=1, label=lbl)
+
+    # per-step load increment: lambda - lambda_old, where lambda_old = accepted
+    # lambda of the PREVIOUS step (0 for step 1). Resets each load step, like dd.
+    acc = {int(at): al for at, al in zip(acc_t, acc_lam)}
+    dlam = np.array([lam[k] - acc.get(int(t_arr[k]) - 1, 0.0) for k in range(n_iter)])
+
+    nrows = 5 if ds is not None else 4
+    fig, axes = plt.subplots(nrows, 1, figsize=(12, 2.6 * nrows), dpi=150, sharex=True)
+
+    # --- subplot 0: load factor lambda ---
+    ax = axes[0]
+    ax.plot(x, lam, "b-", linewidth=1)
+    for st, lv in zip(acc_t, acc_lam):
+        idx = np.where(t_arr == st)[0]
+        if len(idx):
+            ax.plot(idx[-1], lv, "go", markersize=5)
+    ax.axhline(1.0, color="k", linestyle="--", linewidth=1, label=r"$\lambda=1$")
+    add_vlines(ax)
+    ax.set_ylabel(r"load factor $\lambda$")
+    ax.set_xlim(xlim)
+    ax.grid(True, alpha=0.4)
+    ax.set_title("Arc-length continuation (green = accepted step)")
+    ax.legend(fontsize=7)
+
+    # --- subplot 1: load increment per step (lambda - lambda_old, resets each step) ---
+    ax = axes[1]
+    ax.plot(x, dlam, color="teal", linewidth=1)
+    add_vlines(ax)
+    ax.set_ylabel(r"load incr. $\Delta\lambda$")
+    ax.set_xlim(xlim)
+    ax.grid(True, alpha=0.4)
+
+    # --- subplot 2: bulge increment (mean nodal |dd|, consistent w/ residual) ---
+    ax = axes[2]
+    ax.plot(x, dd, color="purple", linewidth=1)
+    add_vlines(ax)
+    ax.set_ylabel(r"bulge incr. mean$|\Delta d|$ (cm)")
+    ax.set_xlim(xlim)
+    ax.grid(True, alpha=0.4)
+
+    # --- subplot 3: adaptive arc step ds (halves on a failed step) ---
+    if ds is not None:
+        ax = axes[3]
+        ax.step(x, ds, where="post", color="darkorange", linewidth=1.2)
+        add_vlines(ax)
+        ax.set_ylabel(r"arc step $\Delta s$ (cm)")
+        ax.set_yscale("log")
+        ax.set_xlim(xlim)
+        ax.grid(True, which="both", alpha=0.4)
+
+    # --- last subplot: coupling residual, log scale ---
+    ax = axes[-1]
+    ax.plot(x, res, "k-", linewidth=1)
+    ax.axhline(tol, color="k", linestyle="--", linewidth=1, label="tol")
+    add_vlines(ax, with_label=True)
+    ax.set_ylabel("Coupling residual")
+    ax.set_yscale("log")
+    ax.set_xlim(xlim)
+    ax.grid(True, which="both", alpha=0.4)
+    ax.set_xlabel("cumulative coupling sub-iteration")
+    ax.legend(fontsize=7)
+
+    from matplotlib.ticker import MaxNLocator
+    for ax in axes:
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    plt.tight_layout()
+    fname = os.path.join(out, "arc_lambda.pdf")
+    fig.savefig(fname, bbox_inches="tight")
+    plt.close(fig)
+    print("arc_lambda.pdf")
+
+
+def main_arg(folder, domain="solid", load_step=-1):
     # collect simulations
     out, inp, param = collect_simulations(folder)
 
@@ -661,7 +910,13 @@ def main_arg(folder, domain="solid"):
     for n, o in inp.items():
         data[n], coords[n], times[n] = post_process(o, domain)
 
-    plot_res(data, coords, times, param, out, domain, "single")
+    plot_res(data, coords, times, param, out, domain, "single", load_step=[load_step])
+
+    # plot IQN-ILS cc coefficients + arc-length trajectory if their data exist
+    for n, f_out in inp.items():
+        f_run = os.path.dirname(os.path.dirname(f_out.rstrip("/")))  # go up from partitioned/converged to run root
+        plot_cc(f_run, out)
+        plot_arc(f_run, out)
 
 
 def main_convergence(folder):
@@ -704,7 +959,7 @@ def main_convergence(folder):
 
     plt.tight_layout()
     fig.savefig(os.path.join(out, "convergence.pdf"), bbox_inches="tight")
-    plt.cla()
+    plt.close(fig)
 
 
 if __name__ == "__main__":
@@ -713,12 +968,13 @@ if __name__ == "__main__":
     parser.add_argument("-c", action="store_true", help="Plot convergence")
     parser.add_argument("-p", type=str, help="Plot parametric study")
     parser.add_argument("-f", action="store_true", help="Plot fluid (instead of solid)")
+    parser.add_argument("-t", type=int, default=-1, help="Plot specific load step (default: last)")
     args = parser.parse_args()
 
     domain = "fluid" if args.f else "solid"
     if args.c:
         main_convergence(args.out)
     elif args.p:
-        main_param(args.out, args.p, domain)
+        main_param(args.out, args.p, domain, load_step=args.t)
     else:
-        main_arg(args.out, domain)
+        main_arg(args.out, domain, load_step=args.t)

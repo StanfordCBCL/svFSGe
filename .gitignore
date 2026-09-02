@@ -6,5 +6,6 @@
 __pycache__
 *.vt*
 !test_reference/**/*.vtu
+!test_assets/**/*.vtk
 partitioned_*/
 test_output/

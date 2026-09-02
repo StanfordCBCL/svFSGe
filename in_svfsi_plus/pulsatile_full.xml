@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<svFSIFile version="0.1">
+
+<GeneralSimulationParameters>
+  <Continue_previous_simulation> 1 </Continue_previous_simulation>
+  <Number_of_spatial_dimensions> 3 </Number_of_spatial_dimensions>
+  <Number_of_time_steps> 400 </Number_of_time_steps>
+  <Number_of_new_time_steps> 400 </Number_of_new_time_steps>
+  <Time_step_size> 0.00476 </Time_step_size>
+  <Spectral_radius_of_infinite_time_step> 0.5 </Spectral_radius_of_infinite_time_step>
+
+  <Save_results_to_VTK_format> 1 </Save_results_to_VTK_format>
+  <Name_prefix_of_saved_VTK_files> pulsatile </Name_prefix_of_saved_VTK_files>
+  <Increment_in_saving_VTK_files> 1 </Increment_in_saving_VTK_files>
+  <Start_saving_after_time_step> 1 </Start_saving_after_time_step>
+  <Save_results_in_folder> pulsatile </Save_results_in_folder>
+
+  <Increment_in_saving_restart_files> 1 </Increment_in_saving_restart_files>
+  <Convert_BIN_to_VTK_format> 0 </Convert_BIN_to_VTK_format>
+
+  <Verbose> 1 </Verbose>
+  <Warning> 0 </Warning>
+  <Debug> 0 </Debug>
+
+</GeneralSimulationParameters>
+
+
+<Add_mesh name="fluid" >
+
+  <Mesh_file_path> fluid.vtu </Mesh_file_path>
+
+  <Add_face name="f_interface">
+      <Face_file_path> interface.vtp </Face_file_path>
+  </Add_face>
+
+  <Add_face name="f_start">
+      <Face_file_path> start.vtp </Face_file_path>
+  </Add_face>
+
+  <Add_face name="f_end">
+      <Face_file_path> end.vtp </Face_file_path>
+  </Add_face>
+
+</Add_mesh>
+
+
+<Add_equation type="fluid" >
+
+   <Coupled> true </Coupled>
+   <Min_iterations> 1</Min_iterations>
+   <Max_iterations> 10 </Max_iterations>
+   <Tolerance> 1e-6 </Tolerance>
+
+   <Density> 1.06e-6 </Density>
+   <Viscosity model="Constant" >
+     <Value> 4e-6 </Value>
+   </Viscosity>
+
+   <Output type="Spatial" >
+     <WSS> true </WSS>
+     <Velocity> true </Velocity>
+     <Pressure> true </Pressure>
+   </Output>
+
+   <LS type="GMRES" >
+      <Preconditioner> PETSc </Preconditioner>
+      <PETSc_file_path> in_petsc/bcgs.inp </PETSc_file_path>
+   </LS>
+
+   <!-- Inflow vectors -->
+   <Add_BC name="f_start" >
+      <Type> Dir </Type>
+      <Profile> Parabolic </Profile>
+      <Temporal_values_file_path> pulsatile_flow.dat </Temporal_values_file_path>
+      <Time_dependence> Unsteady </Time_dependence>
+      <!-- <Temporal_and_spatial_values_file_path> inflow_vector.dat </Temporal_and_spatial_values_file_path>  -->
+      <Zero_out_perimeter> false </Zero_out_perimeter>
+   </Add_BC>
+
+   <!-- No slip -->
+   <Add_BC name="f_interface" >
+      <Type> Dir </Type>
+      <Time_dependence> Steady </Time_dependence>
+      <Value> 0.0 </Value>
+      <Zero_out_perimeter> false </Zero_out_perimeter>
+   </Add_BC>
+
+   <!-- Outflow pressure -->
+   <Add_BC name="f_end" >
+      <Type> Neu </Type>
+      <Time_dependence> Unsteady </Time_dependence>
+      <Temporal_values_file_path> steady_pressure.dat </Temporal_values_file_path>
+   </Add_BC>
+
+   <!-- Outflow normal to outlet -->
+   <Add_BC name="f_end" >
+      <Type> Dir </Type>
+      <Time_dependence> Steady </Time_dependence>
+      <Value> 0.0 </Value>
+      <Effective_direction> (1, 1, 0) </Effective_direction>
+      <Impose_on_state_variable_integral> true </Impose_on_state_variable_integral>
+      <Zero_out_perimeter> false </Zero_out_perimeter>
+   </Add_BC>
+
+</Add_equation>
+
+</svFSIFile>

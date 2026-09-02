@@ -213,7 +213,7 @@ RTOL = {
 }
 
 
-def compare_vtu(ref_path, test_path):
+def compare_vtu(ref_path, test_path, rtol_overrides=None):
     """
     Compare physical fields in two VTU files using the element-wise
     criterion from svMultiPhysics (conftest.py):
@@ -223,7 +223,23 @@ def compare_vtu(ref_path, test_path):
     i.e. rtol is used as both atol and rtol (same as np.isclose with
     atol=rtol).  Raises ComparisonError if any field has points outside
     the tolerance.
+
+    rtol_overrides: optional dict overriding individual fields' tolerance
+    from the RTOL default above -- e.g. the n660 neural-operator test needs
+    a looser Displacement tolerance than the standard (non-ML) FSI test,
+    since torch CPU inference is only reproducible bit-for-bit within a
+    single fixed (docker image, torch version, CPU microarchitecture)
+    environment, not across the ones GitHub Actions' unpinned "latest"
+    docker tag / unpinned torch install can drift to over time (confirmed
+    empirically: two independent CI runs of identical code produced
+    bit-for-bit identical output that both differed from an older
+    reference VTU by the same ~2.7e-6 -- a deterministic environment
+    mismatch, not run-to-run noise).
     """
+    rtol_map = dict(RTOL)
+    if rtol_overrides:
+        rtol_map.update(rtol_overrides)
+
     print(f"  Loading reference VTU: {ref_path}")
     ref_data = load_vtu(ref_path)
     print(f"  Loading test VTU:      {test_path}")
@@ -233,7 +249,7 @@ def compare_vtu(ref_path, test_path):
     print("  Field-by-field comparison:")
 
     msg = ""
-    for field, rtol in RTOL.items():
+    for field, rtol in rtol_map.items():
         if field not in ref_data:
             print(f"    ? {field:20s} not in reference – skipped")
             continue
@@ -349,8 +365,28 @@ def main():
         default=None,
         help="Path to test VTU file (required when --ref-vtu is given)"
     )
+    parser.add_argument(
+        "--displacement-rtol",
+        type=float,
+        default=None,
+        help=f"Override the VTU Displacement field rtol (default: {RTOL['Displacement']:.0e}). "
+             "Use a looser value for pipelines whose output isn't bit-reproducible across "
+             "environments, e.g. torch CPU inference (the n660 neural-operator test)."
+    )
+    parser.add_argument(
+        "--velocity-rtol",
+        type=float,
+        default=None,
+        help=f"Override the VTU Velocity field rtol (default: {RTOL['Velocity']:.0e})"
+    )
 
     args = parser.parse_args()
+
+    rtol_overrides = {}
+    if args.displacement_rtol is not None:
+        rtol_overrides["Displacement"] = args.displacement_rtol
+    if args.velocity_rtol is not None:
+        rtol_overrides["Velocity"] = args.velocity_rtol
 
     try:
         # Load JSON files
@@ -393,7 +429,7 @@ def main():
                     "Both --ref-vtu and --test-vtu must be provided together"
                 )
             print("4. Comparing VTU fields...")
-            compare_vtu(args.ref_vtu, args.test_vtu)
+            compare_vtu(args.ref_vtu, args.test_vtu, rtol_overrides=rtol_overrides)
             print()
             print("   ✓ PASS: VTU fields within tolerance")
             print()

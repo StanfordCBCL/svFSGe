@@ -6,6 +6,21 @@ on:
   push:
     branches:
       - '**'
+  workflow_dispatch:
+    inputs:
+      regenerate_n660:
+        description: "Regenerate the n660 neural-operator reference from THIS runner and commit it (blesses the runner-specific torch output; skips the strict n660 comparison)"
+        type: boolean
+        default: false
+      regenerate_weak:
+        description: "Regenerate the weak-coupling reference from THIS runner and commit it; skips the strict weak-coupling comparison"
+        type: boolean
+        default: false
+
+# contents: write is needed only for the manual regenerate_n660/regenerate_weak
+# dispatch, which commits the refreshed reference back to the branch.
+permissions:
+  contents: write
 
 jobs:
   test-fsg:
@@ -64,24 +79,52 @@ jobs:
 
               echo ""
               echo "================================"
-              echo "Running FSGe test (nmax=2)..."
+              echo "Running FSGe test 1/3: standard FSI (nmax=2)..."
               echo "================================"
               cd /svFSGe
               python3 ./fsg.py in_sim/partitioned_test.json 2>&1 | tee /svFSGe/test_output/test_run.log
 
-              echo ""
-              echo "================================"
-              echo "Copying results..."
-              echo "================================"
-              # Find the most recent partitioned directory
-              RESULT_DIR=$(ls -dt partitioned_* 2>/dev/null | head -1)
-              if [ -z "$RESULT_DIR" ]; then
-                echo "ERROR: No partitioned results directory found!"
+              # Capture this run dir BEFORE the next run is created (the
+              # partitioned_* glob would otherwise also match the n660 dir).
+              STD_DIR=$(ls -dt partitioned_2* 2>/dev/null | grep -v "partitioned_test_n660" | head -1)
+              if [ -z "$STD_DIR" ]; then
+                echo "ERROR: No standard results directory found!"
                 exit 1
               fi
+              echo "Standard results in: $STD_DIR"
+              cp -r "$STD_DIR" /svFSGe/test_output/standard
 
-              echo "Found results in: $RESULT_DIR"
-              cp -r "$RESULT_DIR" /svFSGe/test_output/
+              echo ""
+              echo "================================"
+              echo "Running FSGe test 2/3: neural-operator n660 surrogate (nmax=2)..."
+              echo "================================"
+              # The neural-operator surrogate needs torch (CPU is enough); the
+              # base image does not ship it, so install the CPU wheel here. The
+              # standard test above runs without torch (lazy import in fsg.py).
+              pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu 2>&1 | tee /svFSGe/test_output/pip_torch.log
+              python3 ./fsg.py in_sim/partitioned_test_n660.json 2>&1 | tee /svFSGe/test_output/test_run_n660.log
+
+              N660_DIR=$(ls -dt partitioned_test_n660_* 2>/dev/null | head -1)
+              if [ -z "$N660_DIR" ]; then
+                echo "ERROR: No n660 results directory found!"
+                exit 1
+              fi
+              echo "n660 results in: $N660_DIR"
+              cp -r "$N660_DIR" /svFSGe/test_output/n660
+
+              echo ""
+              echo "================================"
+              echo "Running FSGe test 3/3: weak coupling, inter-step Aitken (nloads=4)..."
+              echo "================================"
+              python3 ./fsg.py in_sim/partitioned_test_weak_n4.json 2>&1 | tee /svFSGe/test_output/test_run_weak.log
+
+              WEAK_DIR=$(ls -dt partitioned_test_weak_n4_* 2>/dev/null | head -1)
+              if [ -z "$WEAK_DIR" ]; then
+                echo "ERROR: No weak-coupling results directory found!"
+                exit 1
+              fi
+              echo "weak coupling results in: $WEAK_DIR"
+              cp -r "$WEAK_DIR" /svFSGe/test_output/weak
 
               echo ""
               echo "Test execution completed successfully!"
@@ -99,8 +142,16 @@ jobs:
               tail -50 test_output/build.log
             fi
             if [ -f test_output/test_run.log ]; then
-              echo "=== Test run log (last 50 lines) ==="
+              echo "=== Standard test run log (last 50 lines) ==="
               tail -50 test_output/test_run.log
+            fi
+            if [ -f test_output/test_run_n660.log ]; then
+              echo "=== n660 test run log (last 50 lines) ==="
+              tail -50 test_output/test_run_n660.log
+            fi
+            if [ -f test_output/test_run_weak.log ]; then
+              echo "=== weak coupling test run log (last 50 lines) ==="
+              tail -50 test_output/test_run_weak.log
             fi
             exit 1
           else
@@ -112,36 +163,36 @@ jobs:
         run: |
           echo "Test output directory contents:"
           ls -la test_output/ || echo "test_output directory is empty or missing"
-          if ls test_output/partitioned_* 1> /dev/null 2>&1; then
-            echo ""
-            echo "Partitioned directory contents:"
-            ls -la test_output/partitioned_*/
-          else
-            echo "No partitioned results found in test_output/"
-          fi
+          for d in standard n660 weak; do
+            if [ -d "test_output/$d" ]; then
+              echo ""
+              echo "$d results directory contents:"
+              ls -la "test_output/$d/"
+            else
+              echo "No $d results found in test_output/"
+            fi
+          done
 
       - name: Install comparison dependencies
         if: success()
         run: pip install numpy meshio
 
-      - name: Compare results with reference
+      - name: Compare standard FSI results with reference
         if: success()
         run: |
           echo "================================"
-          echo "Comparing test results with reference baseline..."
+          echo "Comparing standard FSI results with reference baseline..."
           echo "================================"
 
-          # Find the partitioned directory in test_output
-          RESULT_DIR=$(ls -dt test_output/partitioned_* 2>/dev/null | head -1)
-
-          if [ -z "$RESULT_DIR" ]; then
-            echo "ERROR: No test results found in test_output/"
+          RESULT_DIR=test_output/standard
+          if [ ! -f "$RESULT_DIR/partitioned.json" ]; then
+            echo "ERROR: No standard test results found in $RESULT_DIR"
             echo "The simulation may have failed. Check the test execution logs above."
             exit 1
           fi
 
           echo "Test results: $RESULT_DIR/partitioned.json"
-          echo "Reference: test_reference/nmax_2/reference_results.json"
+          echo "Reference:    test_reference/nmax_2/reference_results.json"
           echo ""
 
           python3 scripts/compare_results.py \
@@ -149,6 +200,148 @@ jobs:
             "$RESULT_DIR/partitioned.json" \
             --ref-vtu test_reference/nmax_2/tube_002.vtu \
             --test-vtu "$RESULT_DIR/partitioned/converged/tube_002.vtu"
+
+      - name: Regenerate n660 reference (manual dispatch)
+        if: success() && github.event_name == 'workflow_dispatch' && github.event.inputs.regenerate_n660 == 'true'
+        run: |
+          echo "================================"
+          echo "Regenerating n660 reference from this runner's output..."
+          echo "================================"
+          RESULT_DIR=test_output/n660
+          if [ ! -f "$RESULT_DIR/partitioned_test_n660.json" ]; then
+            echo "ERROR: No n660 test results found in $RESULT_DIR"; exit 1
+          fi
+          # Rebuild the curated reference_results.json (convergence.error + config),
+          # mirroring the format documented in test_reference/nmax_2/README.md.
+          python3 - "$RESULT_DIR/partitioned_test_n660.json" <<'PY'
+          import json, sys
+          full = json.load(open(sys.argv[1]))
+          ref = {
+              "description": "Reference convergence data for the FSGe n660 neural-operator CI test (nmax=2)",
+              "generated_from": "CI runner via workflow_dispatch regenerate_n660",
+              "configuration": {
+                  "nloads": full.get("nloads", full.get("nmax", 2)),
+                  "n_procs": full.get("n_procs", {}),
+                  "coup": {"method": full.get("coup", {}).get("method", ""),
+                           "tol": full.get("coup", {}).get("tol", 0)},
+              },
+              "convergence": {"error": full.get("error", {})},
+          }
+          json.dump(ref, open("test_reference/n660_nmax_2/reference_results.json", "w"), indent=2)
+          print("wrote test_reference/n660_nmax_2/reference_results.json")
+          PY
+          cp "$RESULT_DIR/partitioned/converged/tube_002.vtu" test_reference/n660_nmax_2/tube_002.vtu
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add test_reference/n660_nmax_2/reference_results.json test_reference/n660_nmax_2/tube_002.vtu
+          if git diff --cached --quiet; then
+            echo "n660 reference already up to date; nothing to commit."
+          else
+            git commit -m "CI: regenerate n660 reference from runner [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+            echo "Committed refreshed n660 reference."
+          fi
+
+      - name: Compare neural-operator (n660) results with reference
+        if: success() && github.event.inputs.regenerate_n660 != 'true'
+        run: |
+          echo "================================"
+          echo "Comparing neural-operator n660 results with reference baseline..."
+          echo "================================"
+
+          RESULT_DIR=test_output/n660
+          if [ ! -f "$RESULT_DIR/partitioned_test_n660.json" ]; then
+            echo "ERROR: No n660 test results found in $RESULT_DIR"
+            echo "The simulation may have failed. Check the test execution logs above."
+            exit 1
+          fi
+
+          echo "Test results: $RESULT_DIR/partitioned_test_n660.json"
+          echo "Reference:    test_reference/n660_nmax_2/reference_results.json"
+          echo ""
+
+          # Displacement rtol relaxed to 1e-5 (vs. the standard FSI test's
+          # 1e-8): torch CPU inference is only bit-reproducible within a
+          # single fixed (docker image, torch version, CPU microarch)
+          # environment, not across whatever GitHub Actions' unpinned
+          # `docker pull ...:latest` / unpinned `pip install torch` resolve
+          # to over time. Confirmed empirically -- two separate CI runs of
+          # byte-identical code produced bit-for-bit identical output that
+          # both differed from the committed reference VTU by the same
+          # ~2.7e-6, a deterministic environment mismatch, not per-run
+          # noise. 1e-5 comfortably covers that gap while still catching a
+          # real regression.
+          python3 scripts/compare_results.py \
+            test_reference/n660_nmax_2/reference_results.json \
+            "$RESULT_DIR/partitioned_test_n660.json" \
+            --ref-vtu test_reference/n660_nmax_2/tube_002.vtu \
+            --test-vtu "$RESULT_DIR/partitioned/converged/tube_002.vtu" \
+            --displacement-rtol 1e-5
+
+      - name: Regenerate weak-coupling reference (manual dispatch)
+        if: success() && github.event_name == 'workflow_dispatch' && github.event.inputs.regenerate_weak == 'true'
+        run: |
+          echo "================================"
+          echo "Regenerating weak-coupling reference from this runner's output..."
+          echo "================================"
+          RESULT_DIR=test_output/weak
+          if [ ! -f "$RESULT_DIR/partitioned_test_weak_n4.json" ]; then
+            echo "ERROR: No weak-coupling test results found in $RESULT_DIR"; exit 1
+          fi
+          # Rebuild the curated reference_results.json (convergence.error + config),
+          # mirroring the format documented in test_reference/nmax_2/README.md.
+          python3 - "$RESULT_DIR/partitioned_test_weak_n4.json" <<'PY'
+          import json, sys
+          full = json.load(open(sys.argv[1]))
+          ref = {
+              "description": "Reference convergence data for the FSGe weak-coupling CI test (nloads=4, inter-step Aitken)",
+              "generated_from": "CI runner via workflow_dispatch regenerate_weak",
+              "configuration": {
+                  "nloads": full.get("nloads", full.get("nmax", 4)),
+                  "n_procs": full.get("n_procs", {}),
+                  "coup": {"method": full.get("coup", {}).get("method", ""),
+                           "tol": full.get("coup", {}).get("tol", 0)},
+              },
+              "convergence": {"error": full.get("error", {})},
+          }
+          json.dump(ref, open("test_reference/weak_n4/reference_results.json", "w"), indent=2)
+          print("wrote test_reference/weak_n4/reference_results.json")
+          PY
+          cp "$RESULT_DIR/partitioned/converged/tube_004.vtu" test_reference/weak_n4/tube_004.vtu
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add test_reference/weak_n4/reference_results.json test_reference/weak_n4/tube_004.vtu
+          if git diff --cached --quiet; then
+            echo "weak-coupling reference already up to date; nothing to commit."
+          else
+            git commit -m "CI: regenerate weak-coupling reference from runner [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+            echo "Committed refreshed weak-coupling reference."
+          fi
+
+      - name: Compare weak-coupling results with reference
+        if: success() && github.event.inputs.regenerate_weak != 'true'
+        run: |
+          echo "================================"
+          echo "Comparing weak-coupling results with reference baseline..."
+          echo "================================"
+
+          RESULT_DIR=test_output/weak
+          if [ ! -f "$RESULT_DIR/partitioned_test_weak_n4.json" ]; then
+            echo "ERROR: No weak-coupling test results found in $RESULT_DIR"
+            echo "The simulation may have failed. Check the test execution logs above."
+            exit 1
+          fi
+
+          echo "Test results: $RESULT_DIR/partitioned_test_weak_n4.json"
+          echo "Reference:    test_reference/weak_n4/reference_results.json"
+          echo ""
+
+          python3 scripts/compare_results.py \
+            test_reference/weak_n4/reference_results.json \
+            "$RESULT_DIR/partitioned_test_weak_n4.json" \
+            --ref-vtu test_reference/weak_n4/tube_004.vtu \
+            --test-vtu "$RESULT_DIR/partitioned/converged/tube_004.vtu"
 
       - name: Upload test artifacts
         if: always()

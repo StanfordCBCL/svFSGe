@@ -4,7 +4,22 @@
 [arXiv:2404.14187](https://arxiv.org/abs/2404.14187)
 
 ## Quickstart
-1. Install docker and pull the svMultiphyiscs image from 
+
+### One-Line Install (Recommended)
+
+Install FSGe on a new machine with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Eleven7825/svFSGe/master/scripts/install.sh | bash
+```
+
+This will clone the repository, set up the Docker environment, and drop you into an interactive shell ready to run simulations.
+
+**Prerequisites**: Docker and git must be installed and Docker must be running.
+
+### Manual Setup
+
+1. Install docker and pull the svMultiphyiscs image from
 ```bash
 docker pull simvascular/solver:latest
 ```
@@ -54,7 +69,7 @@ python3 ./fsg.py in_sim/partitioned_full.json
 
 ## Quick Setup Script
 
-For convenience, use the provided setup script to automate Docker environment setup:
+If you've already cloned the repository, use the setup script to create a persistent Docker environment:
 
 ```bash
 # From the svFSGe directory
@@ -62,11 +77,44 @@ For convenience, use the provided setup script to automate Docker environment se
 ```
 
 This script will:
-- Create necessary directories
-- Start Docker container with proper mounts
+- Create a persistent Docker container named `fsg-dev`
+- Start the container with proper volume mounts
 - Clone and build svFSIplus
 - Install Python dependencies
-- Provide an interactive shell ready to run simulations 
+- Provide an interactive shell ready to run simulations
+
+The container persists after you exit. Run the script again to reconnect, or use:
+```bash
+docker exec -it fsg-dev /bin/bash
+```
+
+## HPC / Singularity Installation
+
+For HPC environments where Docker is not available, use Singularity/Apptainer:
+
+```bash
+git clone https://github.com/Eleven7825/svFSGe.git ~/svFSGe
+cd ~/svFSGe
+./scripts/setup_singularity.sh
+```
+
+**Run test simulation:**
+```bash
+./scripts/run_simulation.sh in_sim/partitioned_test.json
+```
+
+**Or manually with Singularity:**
+```bash
+singularity exec \
+  --bind ~/svfsi:/svfsi \
+  --bind ~/svFSGe:/svFSGe \
+  ~/svFSGe/singularity_images/simvascular-solver.sif \
+  python3 /svFSGe/fsg.py /svFSGe/in_sim/partitioned_test.json
+```
+
+**Note**: Adjust the number of cores in your configuration files to match your HPC allocation.
+
+**Prerequisites**: Singularity/Apptainer and git. See [README_SINGULARITY.md](README_SINGULARITY.md) for complete documentation.
 
 ## Continuous Integration
 

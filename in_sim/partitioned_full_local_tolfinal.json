@@ -4,13 +4,13 @@
     "tortuosity": false,
     "mesh": "fsg_full_coarse.json",
     "n_procs": {
-        "fluid": 2,
+        "fluid": 3,
         "mesh": 1,
         "solid": 1
     },
     "fluid": {
         "mu": 4e-06,
-        "rho": 1.06e-6,
+        "rho": 1.06e-06,
         "p0": 13.9868,
         "q0": 1000.0,
         "q0_rate": 200.0
@@ -23,21 +23,16 @@
     "coup": {
         "nmax": 200,
         "nmin": 1,
-        "tol": 1.0e-3,
+        "tol": 0.001,
+        "tol_final": 1e-8,
         "method": "iqn_ils",
         "omega0": 0.1,
         "iqn_ils_q": 20,
-        "iqn_ils_eps": 1.0e-1
+        "iqn_ils_eps": 0.1,
+        "iqn_ils_reset": false
     },
-    "nloads": 2,
+    "nloads": 10,
     "fmax": 1.0,
-    "gr_load": {
-        "profile": "tanh",
-        "steep": 2.0
-    },
-    "gr_insult": {
-        "profile": "gaussian"
-    },
     "predict_file": false,
     "exe": {
         "fluid": "/svfsi/svFSI-build/bin/svFSI",
@@ -65,7 +60,7 @@
         "mesh": "mesh",
         "solid": "gr_restart"
     },
-    "name": "partitioned",
+    "name": "partitioned_tolfinal",
     "paths_linux_ubuntu": {
         "in_geo": "/svFSGe/in_geo",
         "in_petsc": "/svFSGe/in_petsc",

@@ -27,9 +27,10 @@
         "method": "iqn_ils",
         "omega0": 0.1,
         "iqn_ils_q": 20,
-        "iqn_ils_eps": 1.0e-1
+        "iqn_ils_eps": 1.0e-1,
+        "iqn_ils_reset": false
     },
-    "nmax": 10,
+    "nloads": 10,
     "fmax": 1.0,
     "predict_file": false,
     "exe": {

@@ -23,20 +23,31 @@
     "coup": {
         "nmax": 200,
         "nmin": 1,
-        "tol": 1.0e-3,
+        "tol": 1.0e-4,
         "method": "iqn_ils",
-        "omega0": 0.1,
+        "omega0": 0.05,
         "iqn_ils_q": 20,
-        "iqn_ils_eps": 1.0e-1
+        "iqn_ils_eps": 1.0e-1,
+        "wss_relax": 0.5
+    },
+    "neural_operator": {
+        "enabled": true,
+        "lddmm_backend": "direct",
+        "pt_file": "/svFSGe/test_assets/n660/wss.pt",
+        "pressure_pt_file": "/svFSGe/test_assets/n660/pressure.pt",
+        "svd_basis_file": "/svFSGe/test_assets/n660/basis.npz",
+        "svd_template_vtk": "/svFSGe/test_assets/n660/cylinder.vtk",
+        "model_dir": "/svFSGe/test_assets/n660",
+        "branch_dims": [24, 64, 64, 64],
+        "trunk_dims": [3, 64, 64, 64],
+        "final_dim": 64,
+        "mode": 8
     },
     "nloads": 2,
     "fmax": 1.0,
     "gr_load": {
         "profile": "tanh",
         "steep": 2.0
-    },
-    "gr_insult": {
-        "profile": "gaussian"
     },
     "predict_file": false,
     "exe": {
@@ -65,7 +76,7 @@
         "mesh": "mesh",
         "solid": "gr_restart"
     },
-    "name": "partitioned",
+    "name": "partitioned_test_n660",
     "paths_linux_ubuntu": {
         "in_geo": "/svFSGe/in_geo",
         "in_petsc": "/svFSGe/in_petsc",

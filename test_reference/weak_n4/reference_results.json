@@ -1,0 +1,37 @@
+{
+  "description": "Reference convergence data for the FSGe weak-coupling CI test (nloads=4, exact prefix of the 80-step production gr_load curve, inter-step Aitken)",
+  "generated_from": "local fsg-dev container run",
+  "configuration": {
+    "nloads": 4,
+    "n_procs": {
+      "fluid": 2,
+      "mesh": 1,
+      "solid": 1
+    },
+    "coup": {
+      "method": "weak",
+      "tol": 0.001
+    }
+  },
+  "convergence": {
+    "error": {
+      "disp": [
+        [
+          1.0
+        ],
+        [
+          0.02347581093835171
+        ],
+        [
+          0.005769101994921297
+        ],
+        [
+          0.007104148973151594
+        ],
+        [
+          0.008550962337374972
+        ]
+      ]
+    }
+  }
+}

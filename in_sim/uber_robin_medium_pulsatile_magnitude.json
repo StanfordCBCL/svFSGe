@@ -1,16 +1,17 @@
 {
     "fsi": true,
-    "debug": false,
+    "debug": true,
     "tortuosity": false,
-    "mesh": "fsg_full_coarse.json",
+    "pulsatile": true,
+    "mesh": "fsg_full_medium.json",
     "n_procs": {
-        "fluid": 2,
+        "fluid": 8,
         "mesh": 1,
         "solid": 1
     },
     "fluid": {
         "mu": 4e-06,
-        "rho": 1.06e-6,
+        "rho": 1.06e-06,
         "p0": 13.9868,
         "q0": 1000.0,
         "q0_rate": 200.0
@@ -20,37 +21,46 @@
         "mesh": 1,
         "solid": 1
     },
+    "pulsatile_config": {
+        "n_cycles": 2,
+        "steps_per_cycle": 200,
+        "n_reduction_steps": 200,
+        "flow_data_file": "pulsatile_flow.dat",
+        "field_reduction": {
+            "wss": "magnitude",
+            "velo": "time_average",
+            "press": "time_average"
+        }
+    },
     "coup": {
         "nmax": 200,
         "nmin": 1,
-        "tol": 1.0e-3,
-        "method": "iqn_ils",
+        "tol": 0.001,
+        "method": "uber_robin",
         "omega0": 0.1,
-        "iqn_ils_q": 20,
-        "iqn_ils_eps": 1.0e-1
+        "omega_min": 0.1
     },
-    "nloads": 2,
+    "nmax": 20,
     "fmax": 1.0,
-    "gr_load": {
-        "profile": "tanh",
-        "steep": 2.0
-    },
-    "gr_insult": {
-        "profile": "gaussian"
-    },
     "predict_file": false,
+    "filter_post": false,
+    "filter_iter": {
+        "method": "laplacian",
+        "lambda_lp": 0.3,
+        "n_iter": 1
+    },
     "exe": {
         "fluid": "/svfsi/svFSI-build/bin/svFSI",
         "mesh": "/svfsi/svFSI-build/bin/svFSI",
         "solid": "/svfsi/svFSI-build/bin/svFSI"
     },
     "inp": {
-        "fluid": "steady_full.xml",
+        "fluid": "pulsatile_full.xml",
         "mesh": "mesh_full.xml",
-        "solid": "gr_full_restart.xml"
+        "solid": "gr_full_restart.shallow.xml"
     },
     "interfaces": {
-        "bc_flow": "steady_flow.dat",
+        "bc_flow": "pulsatile_flow.dat",
         "bc_pressure": "steady_pressure.dat",
         "disp": "interface_displacement.dat",
         "inflow_vector": "inflow_vector.dat",
@@ -61,11 +71,11 @@
         "load_wss": "interface_wss.vtp"
     },
     "out": {
-        "fluid": "steady",
+        "fluid": "pulsatile",
         "mesh": "mesh",
         "solid": "gr_restart"
     },
-    "name": "partitioned",
+    "name": "uber_robin_medium_pulsatile_magnitude",
     "paths_linux_ubuntu": {
         "in_geo": "/svFSGe/in_geo",
         "in_petsc": "/svFSGe/in_petsc",

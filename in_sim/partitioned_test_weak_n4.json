@@ -24,16 +24,22 @@
         "nmax": 200,
         "nmin": 1,
         "tol": 1.0e-3,
-        "method": "iqn_ils",
+        "method": "weak",
         "omega0": 0.1,
         "iqn_ils_q": 20,
         "iqn_ils_eps": 1.0e-1
     },
-    "nloads": 2,
+    "nloads": 4,
     "fmax": 1.0,
     "gr_load": {
-        "profile": "tanh",
-        "steep": 2.0
+        "profile": "file",
+        "curve": [
+            [0, 0.0],
+            [1, 0.02592746668768019],
+            [2, 0.05182255776743539],
+            [3, 0.07765305913925376],
+            [4, 0.10338707800986081]
+        ]
     },
     "gr_insult": {
         "profile": "gaussian"
@@ -65,7 +71,7 @@
         "mesh": "mesh",
         "solid": "gr_restart"
     },
-    "name": "partitioned",
+    "name": "partitioned_test_weak_n4",
     "paths_linux_ubuntu": {
         "in_geo": "/svFSGe/in_geo",
         "in_petsc": "/svFSGe/in_petsc",

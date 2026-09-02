@@ -1,0 +1,38 @@
+data:
+  npz_files_pattern: ../TAA_CFD_pipeline/training_data_fsg/processed_TAA_data_{}.npz
+  npz_range:
+  - 30000
+  - 30565
+  num_workers: 4
+  persistent_workers: true
+  pin_memory: true
+  ref_xyz_vtk_path: ../TAA_CFD_pipeline/vtk/cylinder.vtk
+  train_split: 0.8
+model:
+  branch_dims:
+  - 24
+  - 64
+  - 64
+  - 64
+  final_dim: 64
+  trunk_dims:
+  - 3
+  - 64
+  - 64
+  - 64
+modules:
+  dataset_class: ShearStressDataset
+  dataset_module: dataset.shearStressDataSet_xyz_coeff
+  model_class: ShearStressNN
+  model_module: models.shearStressNN_coeff
+  training_function: train_model
+  training_function_module: models.shearStressNN_coeff
+output:
+  plot_curves: true
+  result_dir: ./results_TAA/fsg_coeff_v2/
+  save_model: true
+training:
+  batch_size: auto
+  learning_rate: 0.001
+  n_epochs: 120
+  seed: 42

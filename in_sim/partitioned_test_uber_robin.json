@@ -24,12 +24,11 @@
         "nmax": 200,
         "nmin": 1,
         "tol": 1.0e-3,
-        "method": "iqn_ils",
+        "method": "uber_robin",
         "omega0": 0.1,
-        "iqn_ils_q": 20,
-        "iqn_ils_eps": 1.0e-1
+        "omega_min": 0.1
     },
-    "nloads": 2,
+    "nloads": 10,
     "fmax": 1.0,
     "gr_load": {
         "profile": "tanh",
@@ -65,7 +64,7 @@
         "mesh": "mesh",
         "solid": "gr_restart"
     },
-    "name": "partitioned",
+    "name": "partitioned_test_uber_robin",
     "paths_linux_ubuntu": {
         "in_geo": "/svFSGe/in_geo",
         "in_petsc": "/svFSGe/in_petsc",
